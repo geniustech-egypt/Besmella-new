@@ -2210,6 +2210,23 @@ document.getElementById("backFromAdminOrdersBtn")?.addEventListener("click", () 
 document.getElementById("refreshAdminOrdersBtn")?.addEventListener("click", async () => {
   await renderAdminOrdersScreen();
 });
+function openWhatsAppModal(fromSend = false) {
+  const modal = document.getElementById("whatsAppModal");
+  const input = document.getElementById("whatsAppNumberInput");
+  const msg = document.getElementById("whatsAppMsg");
+
+  if (!modal || !input || !msg) return;
+
+  msg.style.color = "";
+  msg.textContent = fromSend ? "اكتب رقم واتساب المطعم ثم اضغط إرسال." : "";
+  input.value = getRestaurantWhatsAppNumber() || "";
+  modal.style.display = "flex";
+}
+
+function closeWhatsAppModal() {
+  const modal = document.getElementById("whatsAppModal");
+  if (modal) modal.style.display = "none";
+}
 
 document.getElementById("openWhatsAppModalBtn")?.addEventListener("click", () => openWhatsAppModal(false));
 document.getElementById("closeWhatsAppModalBtn")?.addEventListener("click", closeWhatsAppModal);
