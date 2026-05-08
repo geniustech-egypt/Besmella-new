@@ -2317,6 +2317,9 @@ if ("serviceWorker" in navigator) {
    Startup
 ====================== */
 window.addEventListener("load", async () => {
+  console.log("enteredBefore =", hasEnteredAppBefore());
+  console.log("savedUserName =", getSavedUserName());
+
   await ensureAnonymousAuth();
 
   if (!hasEnteredAppBefore()) {
