@@ -6,227 +6,258 @@
   <title>BESMELLA</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#b80f0a">
+  <meta name="theme-color" content="#b80f0a">
 
-<!-- iOS -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="BESMELLA">
-<link rel="apple-touch-icon" href="icon-192.png">
+  <!-- iOS -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BESMELLA">
+  <link rel="apple-touch-icon" href="icon-192.png">
+
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 
 <body>
-  <header class="hero">
-    <div class="hero-inner">
-      <h1 class="hero-title">BESMELLA</h1>
-      <div class="hero-pill">
-        <button class="hero-pill-btn" type="button" aria-label="اختيار مستخدم">
-          <i class="fa-solid fa-user"></i>
+  <!-- Welcome Screen -->
+  <section id="welcomeScreen" class="welcome-screen">
+    <div class="welcome-shell">
+      <header class="welcome-header">
+        <h1 class="welcome-title">BESMELLA</h1>
+        <p class="welcome-subtitle">اطلب وجبتك المفضلة مع فريقك</p>
+      </header>
+
+      <section class="welcome-gallery" aria-label="معرض صور الأصناف">
+        <div class="welcome-grid">
+          <div class="welcome-card small-left" style="background-image:url('breadfast 1.png')"></div>
+          <div class="welcome-card hero-right" style="background-image:url('breadfast 3.png')"></div>
+          <div class="welcome-card bottom-left" style="background-image:url('fast 8.png')"></div>
+          <div class="welcome-card bottom-middle" style="background-image:url('fast 9.png')"></div>
+          <div class="welcome-card bottom-right" style="background-image:url('breadfast 2.png')"></div>
+        </div>
+      </section>
+
+      <div class="welcome-copy">
+        <p>سجل دخولك للانضمام وتقديم طلبك</p>
+      </div>
+
+      <div class="welcome-actions">
+        <button id="enterAppBtn" type="button" class="welcome-signin-btn">
+          <span>Sign In</span>
+          <i class="fa-solid fa-arrow-right-to-bracket"></i>
         </button>
-        <span class="hero-pill-text" id="heroUserName">مستخدم</span>
       </div>
     </div>
-  </header>
+  </section>
 
-  <main>
-    <!-- رسالة إغلاق الطلبات -->
-    <div id="ordersClosedMessage" class="closed-banner" style="display:none;">
-      <h2 class="closed-title">
-        <i class="fa-solid fa-circle-exclamation"></i> تم إغلاق استقبال الطلبات
-      </h2>
-      <p class="closed-text">لقد انتهى الوقت المحدد لإدخال الطلبات اليوم. يرجى المحاولة غداً.</p>
-    </div>
-
-    <!-- صور ثابتة (ديكور) تحت الهيدر مثل الصورة -->
-    <section class="fixed-gallery glass" aria-label="معرض صور ثابت">
-      <div class="fixed-grid">
-        <div class="fixed-card small1" style="background-image:url('breadfast 1.png')">
-          <div class="label">تونة</div>
-        </div>
-        <div class="fixed-card small2" style="background-image:url('breadfast 2.png')">
-          <div class="label">شاورما</div>
-        </div>
-        <div class="fixed-card big" style="background-image:url('breadfast 3.png')">
-          <div class="label">بريدفاست</div>
-        </div>
-        <div class="fixed-card wide1" style="background-image:url('fast 8.png')">
-          <div class="label">فول</div>
-        </div>
-        <div class="fixed-card wide2" style="background-image:url('fast 9.png')">
-          <div class="label">بطاطس</div>
+  <!-- Main App -->
+  <div id="appShell" class="app-shell">
+    <header class="hero">
+      <div class="hero-inner">
+        <h1 class="hero-title">BESMELLA</h1>
+        <div class="hero-pill">
+          <button class="hero-pill-btn" type="button" aria-label="اختيار مستخدم">
+            <i class="fa-solid fa-user"></i>
+          </button>
+          <span class="hero-pill-text" id="heroUserName">مستخدم</span>
         </div>
       </div>
-    </section>
+    </header>
 
-    <!-- الفلتر -->
-    <section class="filters glass" aria-label="فلتر الأصناف">
-      <div class="filters-head">
-        <h2><i class="fa-solid fa-filter"></i> فلتر الأصناف</h2>
-      </div>
-      <div class="chips" id="categoryChips" role="group" aria-label="الأقسام"></div>
-    </section>
-
-    <!-- قائمة الأصناف (Cards) -->
-    <section class="menu glass" aria-label="قائمة الأصناف">
-      <div id="itemsGrid" class="items-grid"></div>
-    </section>
-
-    <!-- قسم الطلب -->
-    <section class="order-section glass">
-      <div class="name-section">
-        <input id="nameInput" class="name-input" type="text" placeholder="أدخل الإسم هنا" required autocomplete="off" />
-        <div id="nameRequiredMsg">يجب إدخال الاسم أولاً!</div>
+    <main>
+      <!-- رسالة إغلاق الطلبات -->
+      <div id="ordersClosedMessage" class="closed-banner" style="display:none;">
+        <h2 class="closed-title">
+          <i class="fa-solid fa-circle-exclamation"></i> تم إغلاق استقبال الطلبات
+        </h2>
+        <p class="closed-text">لقد انتهى الوقت المحدد لإدخال الطلبات اليوم. يرجى المحاولة غداً.</p>
       </div>
 
-      <div id="orderSummary" class="order-summary" style="display:none;">
-        <h2 class="section-title">ملخص الطلب (حسب الفلتر)</h2>
-        <table id="summaryTable">
+      <!-- صور ثابتة (ديكور) تحت الهيدر -->
+      <section class="fixed-gallery glass" aria-label="معرض صور ثابت">
+        <div class="fixed-grid">
+          <div class="fixed-card small1" style="background-image:url('breadfast 1.png')">
+            <div class="label">تونة</div>
+          </div>
+          <div class="fixed-card small2" style="background-image:url('breadfast 2.png')">
+            <div class="label">شاورما</div>
+          </div>
+          <div class="fixed-card big" style="background-image:url('breadfast 3.png')">
+            <div class="label">بريدفاست</div>
+          </div>
+          <div class="fixed-card wide1" style="background-image:url('fast 8.png')">
+            <div class="label">فول</div>
+          </div>
+          <div class="fixed-card wide2" style="background-image:url('fast 9.png')">
+            <div class="label">بطاطس</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- الفلتر -->
+      <section class="filters glass" aria-label="فلتر الأصناف">
+        <div class="filters-head">
+          <h2><i class="fa-solid fa-filter"></i> فلتر الأصناف</h2>
+        </div>
+        <div class="chips" id="categoryChips" role="group" aria-label="الأقسام"></div>
+      </section>
+
+      <!-- قائمة الأصناف -->
+      <section class="menu glass" aria-label="قائمة الأصناف">
+        <div id="itemsGrid" class="items-grid"></div>
+      </section>
+
+      <!-- قسم الطلب -->
+      <section class="order-section glass">
+        <div class="name-section">
+          <input id="nameInput" class="name-input" type="text" placeholder="أدخل الإسم هنا" required autocomplete="off" />
+          <div id="nameRequiredMsg">يجب إدخال الاسم أولاً!</div>
+        </div>
+
+        <div id="orderSummary" class="order-summary" style="display:none;">
+          <h2 class="section-title">ملخص الطلب (حسب الفلتر)</h2>
+          <table id="summaryTable">
+            <thead>
+              <tr>
+                <th>الصنف</th>
+                <th>الكمية</th>
+                <th>سع�� الوحدة</th>
+                <th>الإجمالي</th>
+              </tr>
+            </thead>
+            <tbody id="summaryList"></tbody>
+          </table>
+
+          <div class="total-row">
+            <span>إجمالي قيمة الطلب:</span>
+            <span id="orderTotal"></span> <span>جنيه</span>
+          </div>
+
+          <button id="editSummaryButton" type="button" class="btn btn-outline">تعديل</button>
+          <button id="confirmOrderButton" type="button" class="btn btn-primary">تأكيد الطلب</button>
+        </div>
+
+        <div id="currentOrder" class="current-order" style="display:none;">
+          <h2 class="section-title">الأصناف المختارة (حسب الفلتر)</h2>
+
+          <div id="orderCards" class="order-cards"></div>
+
+          <button id="submitOrderButton" type="button" class="btn btn-outline">ملخص الطلب</button>
+        </div>
+      </section>
+
+      <section class="orders-view-section">
+        <button id="viewOrdersButton" class="btn btn-primary">عرض الطلب المجمع</button>
+        <button id="viewIndividualOrdersButton" class="btn btn-soft">الطلبات الفردية</button>
+
+        <button id="exportExcelButton" type="button" class="btn btn-outline">
+          <i class="fa-solid fa-file-excel"></i>
+          Send To Excel
+        </button>
+
+        <button id="openWhatsAppModalBtn" type="button" class="btn btn-outline">
+          <i class="fa-brands fa-whatsapp"></i>
+          إرسال الطلب المجمع واتساب
+        </button>
+      </section>
+
+      <section id="ordersSection" style="display:none;">
+        <h2 class="section-title">ا��طلب المجمع</h2>
+        <table>
           <thead>
             <tr>
               <th>الصنف</th>
               <th>الكمية</th>
               <th>سعر الوحدة</th>
-              <th>الإجمالي</th>
+              <th>القيمة</th>
             </tr>
           </thead>
-          <tbody id="summaryList"></tbody>
+          <tbody id="ordersTableBody"></tbody>
         </table>
 
-        <div class="total-row">
-          <span>إجمالي قيمة الطلب:</span>
-          <span id="orderTotal"></span> <span>جنيه</span>
+        <h2 class="section-title" style="margin-top:12px;">أسماء من قام بالطلب</h2>
+        <div id="usersOutput"></div>
+      </section>
+
+      <section id="individualOrdersSection" style="display:none;">
+        <h2 class="section-title">الطلبات الفردية</h2>
+        <div id="individualOrdersOutput"></div>
+      </section>
+
+      <!-- Admin -->
+      <section id="adminSection" class="glass admin">
+        <button id="adminLoginBtn" class="btn btn-soft" style="display:inline-block;">تسجيل دخول الأدمن</button>
+        <button id="adminLogoutBtn" class="btn btn-soft" style="display:none;">تسجيل الخروج</button>
+        <button id="openAddItemModal" class="btn btn-primary" style="display:none;">إضافة صنف جديد</button>
+        <button id="editItemsBtn" class="btn btn-primary" style="display:none;">تعديل الأصناف</button>
+        <button id="editCutoffTimeBtn" class="btn btn-primary" style="display:none;">تعديل وقت إغلاق الطلبات</button>
+        <button id="manageCategoriesBtn" class="btn btn-primary" style="display:none;">إدارة الأقسام</button>
+      </section>
+
+      <!-- Modals -->
+      <div id="adminLoginModal" class="modal">
+        <div class="modal-card">
+          <h3 class="modal-title">دخول الأدمن</h3>
+          <input type="email" id="adminEmail" placeholder="الإيميل" class="modal-input">
+          <input type="password" id="adminPassword" placeholder="كلمة السر" class="modal-input">
+          <div id="adminLoginMsg" class="modal-msg"></div>
+          <button id="adminLoginConfirmBtn" class="btn btn-primary" style="width:100%;">دخول</button>
+          <button id="adminLoginCancelBtn" class="btn btn-soft" style="width:100%;">إلغاء</button>
         </div>
-
-        <button id="editSummaryButton" type="button" class="btn btn-outline">تعديل</button>
-        <button id="confirmOrderButton" type="button" class="btn btn-primary">تأكيد الطلب</button>
       </div>
 
-      <div id="currentOrder" class="current-order" style="display:none;">
-        <h2 class="section-title">الأصناف المختارة (حسب الفلتر)</h2>
+      <div id="addItemModal" class="modal">
+        <div class="modal-card">
+          <h3 class="modal-title">إضافة صنف جديد</h3>
 
-        <div id="orderCards" class="order-cards"></div>
+          <label>اسم الصنف:<br><input id="modalItemName" type="text" class="modal-input"></label><br>
+          <label>السعر:<br><input id="modalItemPrice" type="number" min="1" class="modal-input"></label><br>
 
-        <button id="submitOrderButton" type="button" class="btn btn-outline">ملخص الطلب</button>
+          <label>القسم:<br>
+            <select id="modalItemCategory" class="modal-input"></select>
+          </label><br>
+
+          <div id="modalAddItemMsg" class="modal-msg"></div>
+          <button id="confirmAddItem" class="btn btn-primary" style="width:100%;">تأكيد الإضافة</button>
+          <button id="closeAddItemModal" class="btn btn-soft" style="width:100%;">إلغاء</button>
+        </div>
       </div>
-    </section>
 
-    <section class="orders-view-section">
-      <button id="viewOrdersButton" class="btn btn-primary">عرض الطلب المجمع</button>
-      <button id="viewIndividualOrdersButton" class="btn btn-soft">الطلبات الفردية</button>
-
-      <button id="exportExcelButton" type="button" class="btn btn-outline">
-        <i class="fa-solid fa-file-excel"></i>
-        Send To Excel
-      </button>
-
-      <!-- زر واتساب -->
-      <button id="openWhatsAppModalBtn" type="button" class="btn btn-outline">
-        <i class="fa-brands fa-whatsapp"></i>
-        إرسال الطلب المجمع واتساب
-      </button>
-    </section>
-
-    <section id="ordersSection" style="display:none;">
-      <h2 class="section-title">الطلب المجمع</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>الصنف</th>
-            <th>الكمية</th>
-            <th>سعر الوحدة</th>
-            <th>القيمة</th>
-          </tr>
-        </thead>
-        <tbody id="ordersTableBody"></tbody>
-      </table>
-
-      <h2 class="section-title" style="margin-top:12px;">أسماء من قام بالطلب</h2>
-      <div id="usersOutput"></div>
-    </section>
-
-    <section id="individualOrdersSection" style="display:none;">
-      <h2 class="section-title">الطلبات الفردية</h2>
-      <div id="individualOrdersOutput"></div>
-    </section>
-
-    <!-- Admin -->
-    <section id="adminSection" class="glass admin">
-      <button id="adminLoginBtn" class="btn btn-soft" style="display:inline-block;">تسجيل دخول الأدمن</button>
-      <button id="adminLogoutBtn" class="btn btn-soft" style="display:none;">تسجيل الخروج</button>
-      <button id="openAddItemModal" class="btn btn-primary" style="display:none;">إضافة صنف جديد</button>
-      <button id="editItemsBtn" class="btn btn-primary" style="display:none;">تعديل الأصناف</button>
-      <button id="editCutoffTimeBtn" class="btn btn-primary" style="display:none;">تعديل وقت إغلاق الطلبات</button>
-      <button id="manageCategoriesBtn" class="btn btn-primary" style="display:none;">إدارة الأقسام</button>
-    </section>
-
-    <!-- Modals -->
-    <div id="adminLoginModal" class="modal">
-      <div class="modal-card">
-        <h3 class="modal-title">دخول الأدمن</h3>
-        <input type="email" id="adminEmail" placeholder="الإيميل" class="modal-input">
-        <input type="password" id="adminPassword" placeholder="كلمة السر" class="modal-input">
-        <div id="adminLoginMsg" class="modal-msg"></div>
-        <button id="adminLoginConfirmBtn" class="btn btn-primary" style="width:100%;">دخول</button>
-        <button id="adminLoginCancelBtn" class="btn btn-soft" style="width:100%;">إلغاء</button>
+      <div id="cutoffTimeModal" class="modal">
+        <div class="modal-card">
+          <h3 class="modal-title">تعديل وقت إغلاق الطلبات</h3>
+          <p style="text-align:center;font-size:14px;color:#64748b;margin-bottom:12px;">اختر الوقت اليومي لإغلاق استقبال الطلبات</p>
+          <label style="display:block;text-align:right;margin-bottom:8px;font-weight:900;">الساعة:</label>
+          <input type="time" id="cutoffTimeInput" class="modal-input" />
+          <div id="cutoffTimeMsg" class="modal-msg"></div>
+          <button id="saveCutoffTimeBtn" class="btn btn-primary" style="width:100%;">حفظ الوقت الجديد</button>
+          <button id="closeCutoffTimeModal" class="btn btn-soft" style="width:100%;">إلغاء</button>
+        </div>
       </div>
-    </div>
 
-    <!-- Add Item Modal (تمت إضافة اختيار القسم) -->
-    <div id="addItemModal" class="modal">
-      <div class="modal-card">
-        <h3 class="modal-title">إضافة صنف جديد</h3>
+      <div id="whatsAppModal" class="modal">
+        <div class="modal-card">
+          <h3 class="modal-title">إرسال الطلب المجمع عبر واتساب</h3>
 
-        <label>اسم الصنف:<br><input id="modalItemName" type="text" class="modal-input"></label><br>
-        <label>السعر:<br><input id="modalItemPrice" type="number" min="1" class="modal-input"></label><br>
+          <label style="display:block;font-weight:900;margin-bottom:6px;">رقم واتساب المطعم</label>
+          <input id="whatsAppNumberInput" class="modal-input" placeholder="مثال: 2010xxxxxxxxx" inputmode="numeric" />
 
-        <label>القسم:<br>
-          <select id="modalItemCategory" class="modal-input"></select>
-        </label><br>
+          <div id="whatsAppMsg" class="modal-msg"></div>
 
-        <div id="modalAddItemMsg" class="modal-msg"></div>
-        <button id="confirmAddItem" class="btn btn-primary" style="width:100%;">تأكيد الإضافة</button>
-        <button id="closeAddItemModal" class="btn btn-soft" style="width:100%;">إلغاء</button>
+          <button id="sendWhatsAppBtn" class="btn btn-primary" style="width:100%;">
+            <i class="fa-brands fa-whatsapp"></i> إرسال
+          </button>
+          <button id="closeWhatsAppModalBtn" class="btn btn-soft" style="width:100%;">إغلاق</button>
+        </div>
       </div>
-    </div>
+    </main>
 
-    <div id="cutoffTimeModal" class="modal">
-      <div class="modal-card">
-        <h3 class="modal-title">تعديل وقت إغلاق الطلبات</h3>
-        <p style="text-align:center;font-size:14px;color:#64748b;margin-bottom:12px;">اختر الوقت اليومي لإغلاق استقبال الطلبات</p>
-        <label style="display:block;text-align:right;margin-bottom:8px;font-weight:900;">الساعة:</label>
-        <input type="time" id="cutoffTimeInput" class="modal-input" />
-        <div id="cutoffTimeMsg" class="modal-msg"></div>
-        <button id="saveCutoffTimeBtn" class="btn btn-primary" style="width:100%;">حفظ الوقت الجديد</button>
-        <button id="closeCutoffTimeModal" class="btn btn-soft" style="width:100%;">إلغاء</button>
+    <footer>
+      <div class="copyright">
+        <p>Copyright © 2024 GENIUS Tech All Rights Reserved</p>
       </div>
-    </div>
-
-    <!-- WhatsApp Modal -->
-    <div id="whatsAppModal" class="modal">
-      <div class="modal-card">
-        <h3 class="modal-title">إرسال الطلب المجمع عبر واتساب</h3>
-
-        <label style="display:block;font-weight:900;margin-bottom:6px;">رقم واتساب المطعم</label>
-        <input id="whatsAppNumberInput" class="modal-input" placeholder="مثال: 2010xxxxxxxxx" inputmode="numeric" />
-
-        <div id="whatsAppMsg" class="modal-msg"></div>
-
-        <button id="sendWhatsAppBtn" class="btn btn-primary" style="width:100%;">
-          <i class="fa-brands fa-whatsapp"></i> إرسال
-        </button>
-        <button id="closeWhatsAppModalBtn" class="btn btn-soft" style="width:100%;">إغلاق</button>
-      </div>
-    </div>
-
-  </main>
-
-  <footer>
-    <div class="copyright">
-      <p>Copyright © 2024 GENIUS Tech All Rights Reserved</p>
-    </div>
-  </footer>
+    </footer>
+  </div>
 
   <!-- SheetJS -->
   <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
