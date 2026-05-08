@@ -1,4 +1,3 @@
-// Firebase استيراد مكتبات
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-app.js";
 import {
   getFirestore,
@@ -13,12 +12,19 @@ import {
   getDoc,
   setDoc,
   where,
-  limit
+  limit,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-firestore.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.18.0/firebase-auth.js";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  signInAnonymously
+} from "https://www.gstatic.com/firebasejs/9.18.0/firebase-auth.js";
 
 /* ======================
-   إعدادات Firebase
+   Firebase
 ====================== */
 const firebaseConfig = {
   apiKey: "AIzaSyCNsSCHV_jQ1mohXlbzvMACujqQ464DFcE",
@@ -38,64 +44,28 @@ window.db = db;
 window.auth = auth;
 
 /* ======================
-   شاشة البداية
+   Storage Keys
 ====================== */
 const APP_ENTERED_STORAGE_KEY = "besmella_app_entered_once";
-
-function hasEnteredAppBefore() {
-  return localStorage.getItem(APP_ENTERED_STORAGE_KEY) === "1";
-}
-
-function markAppAsEntered() {
-  localStorage.setItem(APP_ENTERED_STORAGE_KEY, "1");
-}
-
-function showWelcomeScreen() {
-  const welcomeScreen = document.getElementById("welcomeScreen");
-  const appShell = document.getElementById("appShell");
-
-  document.body.classList.add("welcome-mode");
-  if (welcomeScreen) welcomeScreen.classList.add("is-visible");
-  if (appShell) appShell.classList.add("is-hidden");
-}
-
-function showAppShell() {
-  const welcomeScreen = document.getElementById("welcomeScreen");
-  const appShell = document.getElementById("appShell");
-
-  document.body.classList.remove("welcome-mode");
-  if (welcomeScreen) welcomeScreen.classList.remove("is-visible");
-  if (appShell) appShell.classList.remove("is-hidden");
-}
-
-function initWelcomeScreen() {
-  const enterBtn = document.getElementById("enterAppBtn");
-
-  if (hasEnteredAppBefore()) {
-    showAppShell();
-  } else {
-    showWelcomeScreen();
-  }
-
-  enterBtn?.addEventListener("click", () => {
-    markAppAsEntered();
-    showAppShell();
-  });
-}
-
-/* ======================
-   بريد الأدمن
-====================== */
+const USER_NAME_STORAGE_KEY = "besmella_user_name";
+const WHATSAPP_NUMBER_STORAGE_KEY = "besmella_restaurant_whatsapp_number";
 const ADMIN_EMAIL = "hussein-admin@g.tech.com";
 
 /* ======================
-   WhatsApp (رقم المطعم متغير)
+   Helpers عامة
 ====================== */
-const WHATSAPP_NUMBER_STORAGE_KEY = "besmella_restaurant_whatsapp_number";
+function toInt(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.round(n));
+}
+
+function formatNumber(num) {
+  return String(toInt(num));
+}
 
 function normalizeWhatsAppNumber(raw) {
-  const v = String(raw || "").trim().replace(/[^\d]/g, "");
-  return v;
+  return String(raw || "").trim().replace(/[^\d]/g, "");
 }
 
 function getRestaurantWhatsAppNumber() {
@@ -106,14 +76,6 @@ function setRestaurantWhatsAppNumber(num) {
   localStorage.setItem(WHATSAPP_NUMBER_STORAGE_KEY, normalizeWhatsAppNumber(num));
 }
 
-/* ======================
-   Helpers عامة
-====================== */
-function formatNumber(num) {
-  if (Number.isInteger(num)) return num;
-  return Number(num).toFixed(2).replace(/\.?0+$/, "");
-}
-
 function getEgyptDateString() {
   const now = new Date();
   const egyptOffset = 2 * 60;
@@ -121,8 +83,121 @@ function getEgyptDateString() {
   return egyptTime.toISOString().split("T")[0];
 }
 
+function getCurrentDateTimeText() {
+  const now = new Date();
+  return new Intl.DateTimeFormat("ar-EG", {
+    weekday: "long",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(now);
+}
+
+function getShortDateTimeText(iso) {
+  if (!iso) return "--";
+  return new Intl.DateTimeFormat("ar-EG", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "numeric",
+    month: "short"
+  }).format(new Date(iso));
+}
+
 /* ======================
-   Categories (Dynamic from Firestore)
+   Auth Helpers
+====================== */
+async function ensureAnonymousAuth() {
+  if (auth.currentUser) return auth.currentUser;
+  const cred = await signInAnonymously(auth);
+  return cred.user;
+}
+
+function getCurrentUid() {
+  return auth.currentUser?.uid || null;
+}
+
+/* ======================
+   App Entry / User Name
+====================== */
+function hasEnteredAppBefore() {
+  return localStorage.getItem(APP_ENTERED_STORAGE_KEY) === "1";
+}
+
+function markAppAsEntered() {
+  localStorage.setItem(APP_ENTERED_STORAGE_KEY, "1");
+}
+
+function getSavedUserName() {
+  return localStorage.getItem(USER_NAME_STORAGE_KEY) || "";
+}
+
+function saveUserName(name) {
+  localStorage.setItem(USER_NAME_STORAGE_KEY, String(name || "").trim());
+}
+
+function syncUserNameAcrossUI() {
+  const saved = getSavedUserName() || "مستخدم";
+  const homeUserName = document.getElementById("homeUserName");
+  if (homeUserName) homeUserName.textContent = saved;
+}
+
+/* ======================
+   Screen Management
+====================== */
+const SCREEN_IDS = [
+  "homeScreen",
+  "menuScreen",
+  "reviewScreen",
+  "successScreen",
+  "aggregatedInvoiceScreen",
+  "adminDashboardScreen",
+  "adminOrdersScreen"
+];
+
+function showScreen(screenId) {
+  SCREEN_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle("active", id === screenId);
+  });
+}
+
+function showWelcomeScreen() {
+  document.body.classList.add("welcome-mode");
+  document.getElementById("welcomeScreen")?.classList.add("is-visible");
+  document.getElementById("nameSetupScreen")?.classList.remove("is-visible");
+  document.getElementById("appShell")?.classList.add("is-hidden");
+}
+
+function showNameSetupScreen() {
+  document.body.classList.add("welcome-mode");
+  document.getElementById("welcomeScreen")?.classList.remove("is-visible");
+  document.getElementById("nameSetupScreen")?.classList.add("is-visible");
+  document.getElementById("appShell")?.classList.add("is-hidden");
+}
+
+function showAppShell() {
+  document.body.classList.remove("welcome-mode");
+  document.getElementById("welcomeScreen")?.classList.remove("is-visible");
+  document.getElementById("nameSetupScreen")?.classList.remove("is-visible");
+  document.getElementById("appShell")?.classList.remove("is-hidden");
+}
+
+function continueIntoAppFlow() {
+  if (!getSavedUserName()) {
+    showNameSetupScreen();
+    return;
+  }
+
+  syncUserNameAcrossUI();
+  showAppShell();
+  showScreen("homeScreen");
+}
+
+/* ======================
+   Categories
 ====================== */
 let categories = [
   { id: "all", label: "الكل", icon: "fa-border-all" },
@@ -208,9 +283,6 @@ function refreshAdminCategoryDropdowns() {
   }
 }
 
-/* ======================
-   فلاتر الأقسام (Chips)
-====================== */
 let activeCategory = "all";
 
 function renderCategoryChips() {
@@ -224,17 +296,13 @@ function renderCategoryChips() {
     btn.className = "chip";
     btn.setAttribute("aria-pressed", String(activeCategory === c.id));
     btn.dataset.category = c.id;
-    btn.innerHTML = `<i class="fa-solid ${c.icon}" style="margin-left:8px;"></i>${c.label}`;
+    btn.textContent = c.label;
 
     btn.onclick = () => {
       activeCategory = c.id;
       chips.querySelectorAll(".chip").forEach(x => x.setAttribute("aria-pressed", "false"));
       btn.setAttribute("aria-pressed", "true");
-
       renderItemsGrid();
-      showCurrentOrder();
-
-      if (document.getElementById("orderSummary")?.style.display === "block") showSummary();
     };
 
     chips.appendChild(btn);
@@ -242,7 +310,7 @@ function renderCategoryChips() {
 }
 
 /* ======================
-   إدارة وقت إغلاق الطلبات
+   Orders Cutoff
 ====================== */
 const DEFAULT_CUTOFF_TIME = "08:30";
 let currentCutoffTime = DEFAULT_CUTOFF_TIME;
@@ -259,8 +327,9 @@ function getTimeUntilCutoff() {
   const nowLocal = new Date();
   const now = getEgyptTime(nowLocal);
 
-  let cutoffHours = 8,
-    cutoffMinutes = 30;
+  let cutoffHours = 8;
+  let cutoffMinutes = 30;
+
   if (typeof currentCutoffTime === "string") {
     const parts = currentCutoffTime.split(":").map(x => Number(x));
     cutoffHours = parts[0];
@@ -271,13 +340,9 @@ function getTimeUntilCutoff() {
   }
 
   const cutoffToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), cutoffHours, cutoffMinutes, 0, 0);
-  let diffMs = cutoffToday - now;
   let isOpen = true;
 
-  if (diffMs <= 0) {
-    const cutoffTomorrow = new Date(cutoffToday);
-    cutoffTomorrow.setDate(cutoffTomorrow.getDate() + 1);
-    diffMs = cutoffTomorrow - now;
+  if (cutoffToday - now <= 0) {
     isOpen = false;
   }
 
@@ -288,6 +353,7 @@ async function loadCutoffTime() {
   try {
     const settingsDocRef = doc(db, "settings", "closingTime");
     const snap1 = await getDoc(settingsDocRef);
+
     if (snap1.exists()) {
       const data = snap1.data();
       if (typeof data.hour === "number" && typeof data.minute === "number") {
@@ -319,19 +385,8 @@ async function loadCutoffTime() {
 }
 
 function updateCountdown() {
-  const ordersClosedMsg = document.getElementById("ordersClosedMessage");
-  const orderSection = document.querySelector(".order-section");
-
   const timeInfo = getTimeUntilCutoff();
   ordersOpen = timeInfo.isOpen;
-
-  if (timeInfo.isOpen) {
-    if (ordersClosedMsg) ordersClosedMsg.style.display = "none";
-    if (orderSection) orderSection.style.display = "block";
-  } else {
-    if (ordersClosedMsg) ordersClosedMsg.style.display = "block";
-    if (orderSection) orderSection.style.display = "none";
-  }
 }
 
 function startCountdown() {
@@ -345,136 +400,22 @@ function canSubmitOrder() {
 }
 
 /* ======================
-   قائمة الأصناف الافتراضية
+   Items
 ====================== */
 const fallbackItems = [
-  { name: "بطاطس سلطه وطحينه", id: "potato_salata_tahina", price: 14 },
-  { name: "بطاطس توابل سادة", id: "potato_tawabel_plain", price: 14 },
-  { name: "بطاطس توابل وطحينه", id: "potato_tawabel_tahina", price: 14 },
-  { name: "بطاطس رومي", id: "potato_romi", price: 25 },
-  { name: "فول حار", id: "foul_hot", price: 12 },
-  { name: "فول ساده", id: "foul_plain", price: 10 },
-  { name: "فول سلطه", id: "foul_salata", price: 10 },
-  { name: "فول اسكندراني", id: "foul_iskandrani", price: 12 },
-  { name: "طعميه", id: "ta3miya", price: 10 },
-  { name: "طعميه محشيه", id: "ta3miya_ma7shya", price: 12 },
-  { name: "قرص طعمية محشيه", id: "koras_ma7shya", price: 5 },
-  { name: "بابا غنوج", id: "baba_ganoug", price: 12 },
-  { name: "خدمة توصيل", id: "delivery", price: 22, disabled: true }
+  { name: "فول عادي", id: "foul_regular", price: 13 },
+  { name: "فول سادة", id: "foul_plain", price: 13 },
+  { name: "طعمية", id: "ta3miya", price: 13 },
+  { name: "طعمية محشية", id: "ta3miya_ma7shya", price: 15 },
+  { name: "بطاطس", id: "potato", price: 20 },
+  { name: "سلطة", id: "salad", price: 18 }
 ].map(i => ({ ...i, category: guessCategory(i) }));
 
-/* ======================
-   UUID للمستخدم
-====================== */
-function getOrCreateUserUUID() {
-  let uuid = localStorage.getItem("fattarney_order_uuid");
-  if (!uuid) {
-    uuid = crypto.randomUUID();
-    localStorage.setItem("fattarney_order_uuid", uuid);
-  }
-  return uuid;
-}
-
-function toggleNameInput(disable) {
-  const nameInput = document.getElementById("nameInput");
-  if (!nameInput) return;
-  nameInput.disabled = disable;
-  nameInput.style.opacity = disable ? ".75" : "1";
-}
-
-let userOrderDocId = null;
-let currentOrder = [];
 let itemsList = [];
+let currentOrder = [];
+let userOrderDocId = null;
+let lastSubmittedOrderSnapshot = [];
 
-/* ======================
-   Helpers فلترة
-====================== */
-function getFilteredItems() {
-  if (activeCategory === "all") return itemsList;
-  return itemsList.filter(x => (x.category || guessCategory(x)) === activeCategory);
-}
-
-function getItemCategoryById(itemId) {
-  const fromItems = itemsList?.find(x => x.id === itemId);
-  if (fromItems?.category) return fromItems.category;
-  if (fromItems) return guessCategory(fromItems);
-  return guessCategory({ id: itemId, name: "" });
-}
-
-function getFilteredCurrentOrder() {
-  if (activeCategory === "all") return currentOrder;
-  return currentOrder.filter(o => getItemCategoryById(o.id) === activeCategory);
-}
-
-/* ======================
-   Validation الاسم
-====================== */
-function isNameValid() {
-  const nameInput = document.getElementById("nameInput");
-  const nameMsg = document.getElementById("nameRequiredMsg");
-  if (!nameInput || !nameMsg) return true;
-
-  if (!nameInput.value.trim()) {
-    nameMsg.style.display = "block";
-    nameInput.focus();
-    return false;
-  }
-
-  nameMsg.style.display = "none";
-  const heroUserName = document.getElementById("heroUserName");
-  if (heroUserName) heroUserName.textContent = nameInput.value.trim();
-  return true;
-}
-
-/* ======================
-   تحميل طلب المستخدم
-====================== */
-async function loadUserOrderFromDB() {
-  const uuid = getOrCreateUserUUID();
-  const querySnapshot = await getDocs(collection(db, "orders"));
-  let foundDoc = null;
-
-  querySnapshot.forEach(docSnap => {
-    const data = docSnap.data();
-    if (data.uuid === uuid && !data.archived) foundDoc = { id: docSnap.id, data };
-  });
-
-  if (foundDoc) {
-    userOrderDocId = foundDoc.id;
-    currentOrder = [];
-
-    itemsList.forEach(item => {
-      const qty = foundDoc.data[item.id];
-      const price = foundDoc.data[`${item.id}_price`] || item.price;
-      if (qty && qty > 0) currentOrder.push({ id: item.id, name: item.name, quantity: qty, price });
-    });
-
-    const nameInput = document.getElementById("nameInput");
-    if (nameInput) nameInput.value = foundDoc.data.name;
-
-    const heroUserName = document.getElementById("heroUserName");
-    if (heroUserName) heroUserName.textContent = foundDoc.data.name || "مستخدم";
-
-    toggleNameInput(true);
-    showCurrentOrder();
-  } else {
-    userOrderDocId = null;
-    currentOrder = [];
-    toggleNameInput(false);
-    showCurrentOrder();
-  }
-}
-
-/* ======================
-   إلغاء فكرة الأرشفة/الحذف التلقائي
-====================== */
-async function autoArchiveOldOrders() {
-  // intentionally disabled
-}
-
-/* ======================
-   تحميل الأصن��ف
-====================== */
 async function loadItems() {
   try {
     const q = query(collection(db, "items"), orderBy("name"));
@@ -484,7 +425,7 @@ async function loadItems() {
     itemsSnapshot.forEach(docSnap => {
       const data = docSnap.data();
       const item = { id: docSnap.id, ...data };
-      if (typeof item.price === "undefined") item.price = 0;
+      item.price = toInt(item.price);
       item.category = item.category || guessCategory(item);
       itemsList.push(item);
     });
@@ -495,276 +436,236 @@ async function loadItems() {
   }
 
   renderItemsGrid();
+  renderStickyOrderSummary();
 }
 
-/* ======================
-   صور الأصناف
-====================== */
-const ITEM_IMAGES = {
-  potato: "fast 8.png",
-  foul: "breadfast 1.png",
-  ta3miya: "breadfast 2.png",
-  salad: "fast 9.png",
-  extras: "breadfast 3.png",
-  all: "fast 7.png"
-};
-
-function getImageForItem(item) {
-  if (item?.imageUrl) return item.imageUrl;
-  const cat = item.category || guessCategory(item);
-  return ITEM_IMAGES[cat] || ITEM_IMAGES.all;
+function getFilteredItems() {
+  if (activeCategory === "all") return itemsList;
+  return itemsList.filter(x => (x.category || guessCategory(x)) === activeCategory);
 }
 
-/* ======================
-   عرض الأصناف ككروت + عداد + إضافة
-====================== */
-function clampQty(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return 1;
-  return Math.max(1, Math.floor(n));
+function getCurrentOrderItem(itemId) {
+  return currentOrder.find(x => x.id === itemId);
+}
+
+function setItemQuantity(item, qty) {
+  const existing = currentOrder.find(x => x.id === item.id);
+  const safeQty = toInt(qty);
+
+  if (safeQty <= 0) {
+    currentOrder = currentOrder.filter(x => x.id !== item.id);
+    return;
+  }
+
+  if (existing) {
+    existing.quantity = safeQty;
+  } else {
+    currentOrder.push({
+      id: item.id,
+      name: item.name,
+      quantity: safeQty,
+      price: toInt(item.price),
+      category: item.category || guessCategory(item)
+    });
+  }
+}
+
+function getOrderTotal() {
+  return currentOrder.reduce((acc, item) => acc + toInt(item.price) * toInt(item.quantity), 0);
+}
+
+function getOrderCount() {
+  return currentOrder.reduce((acc, item) => acc + toInt(item.quantity), 0);
 }
 
 function renderItemsGrid() {
   const grid = document.getElementById("itemsGrid");
   if (!grid) return;
 
-  const filtered = getFilteredItems().filter(x => !(x.id === "delivery" || x.disabled));
+  const filtered = getFilteredItems();
   grid.innerHTML = "";
 
   if (filtered.length === 0) {
-    grid.innerHTML = `<div style="grid-column:1/-1;padding:12px;text-align:center;color:#64748b;font-weight:900;">لا توجد أصناف في هذا القسم</div>`;
+    grid.innerHTML = `<div style="padding:20px;text-align:center;color:#777;font-weight:900;">لا توجد أصناف في هذا القسم</div>`;
     return;
   }
 
   filtered.forEach(item => {
-    const card = document.createElement("div");
-    card.className = "item-card";
+    const current = getCurrentOrderItem(item.id);
+    const qty = current ? current.quantity : 0;
 
-    const imgSrc = getImageForItem(item);
+    const row = document.createElement("div");
+    row.className = "menu-item-row";
 
-    card.innerHTML = `
-      <div class="item-top">
-        <img class="item-img" src="${imgSrc}" alt="${item.name}">
-        <div class="item-meta">
-          <div class="item-name">${item.name}</div>
-          <div class="item-price">${formatNumber(item.price)} جنيه</div>
-        </div>
+    row.innerHTML = `
+      <div class="menu-item-info">
+        <div class="menu-item-name">${item.name}</div>
+        <div class="menu-item-sub">${getCategoryLabelById(item.category || guessCategory(item))}</div>
+        <div class="menu-item-price">${formatNumber(item.price)} ج</div>
       </div>
 
-      <div class="item-controls">
-        <div class="qty-stepper" aria-label="عداد الكمية">
-          <button class="qty-btn" type="button" data-act="minus">-</button>
-          <input class="qty-input" type="number" min="1" value="1" inputmode="numeric" aria-label="الكمية">
-          <button class="qty-btn" type="button" data-act="plus">+</button>
-        </div>
-
-        <button class="btn btn-primary" type="button" data-act="add">
-          <i class="fa-solid fa-plus"></i> إضافة
-        </button>
+      <div class="menu-item-actions">
+        <button class="circle-action-btn circle-plus" type="button">+</button>
+        ${qty > 0 ? `<div class="qty-number">${qty}</div><button class="circle-action-btn circle-minus" type="button">−</button>` : ""}
       </div>
     `;
 
-    const qtyInput = card.querySelector(".qty-input");
-    const minusBtn = card.querySelector('[data-act="minus"]');
-    const plusBtn = card.querySelector('[data-act="plus"]');
-    const addBtn = card.querySelector('[data-act="add"]');
+    const plusBtn = row.querySelector(".circle-plus");
+    const minusBtn = row.querySelector(".circle-minus");
 
-    minusBtn.addEventListener("click", () => {
-      qtyInput.value = String(Math.max(1, clampQty(qtyInput.value) - 1));
-    });
-
-    plusBtn.addEventListener("click", () => {
-      qtyInput.value = String(clampQty(qtyInput.value) + 1);
-    });
-
-    qtyInput.addEventListener("input", () => {
-      qtyInput.value = String(clampQty(qtyInput.value || 1));
-    });
-
-    addBtn.addEventListener("click", async () => {
+    plusBtn?.addEventListener("click", () => {
       if (!canSubmitOrder()) {
         alert("عذراً، لقد انتهى وقت استقبال الطلبات لليوم. يرجى المحاولة غداً.");
         return;
       }
-      if (!isNameValid()) return;
 
-      const qty = clampQty(qtyInput.value || 1);
-      qtyInput.value = String(qty);
-
-      const existing = currentOrder.find(x => x.id === item.id);
-      if (existing) existing.quantity += qty;
-      else currentOrder.push({ id: item.id, name: item.name, quantity: qty, price: Number(item.price) || 0 });
-
-      showCurrentOrder();
-
-      if (userOrderDocId) await saveOrderToFirestore(false);
+      setItemQuantity(item, qty + 1);
+      renderItemsGrid();
+      renderStickyOrderSummary();
     });
 
-    grid.appendChild(card);
+    minusBtn?.addEventListener("click", () => {
+      setItemQuantity(item, qty - 1);
+      renderItemsGrid();
+      renderStickyOrderSummary();
+    });
+
+    grid.appendChild(row);
   });
 }
 
-/* ======================
-   عرض الطلب الحالي (كروت)
-====================== */
-function renderCurrentOrderCards() {
-  const cardsWrap = document.getElementById("orderCards");
-  if (!cardsWrap) return;
+function renderStickyOrderSummary() {
+  const bar = document.getElementById("stickyOrderSummaryBar");
+  const list = document.getElementById("selectedItemsMiniList");
+  const total = document.getElementById("stickyOrderTotal");
+  const cartBadge = document.getElementById("cartCountBadge");
 
-  const filteredOrder = getFilteredCurrentOrder();
-  cardsWrap.innerHTML = "";
+  if (!bar || !list || !total || !cartBadge) return;
 
-  if (filteredOrder.length === 0) {
-    cardsWrap.innerHTML = `
-      <div style="padding:12px;border-radius:16px;background:rgba(2,6,23,.06);font-weight:1000;color:#475569;text-align:center;">
-        لا توجد أصناف في هذا القسم داخل طلبك.
-      </div>
-    `;
+  const count = getOrderCount();
+  const totalValue = getOrderTotal();
+
+  if (count <= 0) {
+    bar.style.display = "none";
+    cartBadge.style.display = "none";
+    cartBadge.textContent = "0";
     return;
   }
 
-  filteredOrder.forEach(item => {
-    const total = item.quantity * item.price;
-    const realIndex = currentOrder.findIndex(x => x.id === item.id);
-    const catLabel = getCategoryLabelById(getItemCategoryById(item.id));
+  bar.style.display = "block";
+  cartBadge.style.display = "flex";
+  cartBadge.textContent = String(count);
 
-    const card = document.createElement("div");
-    card.className = "order-card";
-    card.innerHTML = `
-      <div class="meta">
-        <div class="title">${item.name}</div>
-        <div class="sub">
-          <span class="badge"><i class="fa-solid fa-tag"></i> ${catLabel}</span>
-          <span class="badge qty"><i class="fa-solid fa-hashtag"></i> الكمية: ${item.quantity}</span>
-          <span class="badge price"><i class="fa-solid fa-coins"></i> ${formatNumber(total)} جنيه</span>
-        </div>
+  list.innerHTML = currentOrder
+    .map(item => `
+      <div class="selected-mini-item">
+        <button class="delete" type="button" data-delete-item="${item.id}">
+          <i class="fa-regular fa-trash-can"></i>
+        </button>
+        <div class="price">${formatNumber(item.price * item.quantity)} ج</div>
+        <div>${item.quantity} × ${item.name}</div>
       </div>
+    `)
+    .join("");
 
-      <div class="actions">
-        <button type="button" class="order-action" data-a="inc">+1</button>
-        <button type="button" class="order-action" data-a="dec">-1</button>
-        <button type="button" class="order-action danger" data-a="del">حذف</button>
-      </div>
-    `;
+  total.textContent = formatNumber(totalValue);
 
-    card.querySelector('[data-a="inc"]').addEventListener("click", async () => {
-      currentOrder[realIndex].quantity += 1;
-      showCurrentOrder();
-      if (userOrderDocId) await saveOrderToFirestore(false);
+  list.querySelectorAll("[data-delete-item]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      currentOrder = currentOrder.filter(x => x.id !== btn.getAttribute("data-delete-item"));
+      renderItemsGrid();
+      renderStickyOrderSummary();
     });
-
-    card.querySelector('[data-a="dec"]').addEventListener("click", async () => {
-      currentOrder[realIndex].quantity = Math.max(1, currentOrder[realIndex].quantity - 1);
-      showCurrentOrder();
-      if (userOrderDocId) await saveOrderToFirestore(false);
-    });
-
-    card.querySelector('[data-a="del"]').addEventListener("click", async () => {
-      if (!confirm("حذف الصنف من الطلب؟")) return;
-      const removed = currentOrder.splice(realIndex, 1)[0];
-      showCurrentOrder();
-
-      if (userOrderDocId) {
-        const docRef = doc(db, "orders", userOrderDocId);
-        const updateObj = {};
-        updateObj[removed.id] = 0;
-        updateObj[`${removed.id}_price`] = removed.price;
-        await updateDoc(docRef, updateObj);
-      }
-    });
-
-    cardsWrap.appendChild(card);
   });
 }
 
-function showCurrentOrder() {
-  const section = document.getElementById("currentOrder");
-  if (!section) return;
+function renderReviewScreen() {
+  const list = document.getElementById("reviewOrderList");
+  const total = document.getElementById("reviewOrderTotal");
+  if (!list || !total) return;
 
-  if (currentOrder.length > 0) {
-    section.style.display = "block";
-    renderCurrentOrderCards();
-  } else {
-    section.style.display = "none";
-  }
+  list.innerHTML = currentOrder
+    .map(item => `
+      <div class="review-item">
+        <div>${item.quantity} × ${item.name}</div>
+        <div>${formatNumber(item.price * item.quantity)} ج</div>
+      </div>
+    `)
+    .join("");
+
+  total.textContent = formatNumber(getOrderTotal());
+}
+
+function renderSuccessScreen() {
+  const list = document.getElementById("successOrderList");
+  const total = document.getElementById("successOrderTotal");
+  if (!list || !total) return;
+
+  list.innerHTML = lastSubmittedOrderSnapshot
+    .map(item => `
+      <div class="success-item">
+        <div>${item.quantity} × ${item.name}</div>
+        <div>${formatNumber(item.price * item.quantity)} ج</div>
+      </div>
+    `)
+    .join("");
+
+  total.textContent = formatNumber(
+    lastSubmittedOrderSnapshot.reduce((acc, item) => acc + item.price * item.quantity, 0)
+  );
 }
 
 /* ======================
-   ملخص/تأكيد
+   User Order DB
 ====================== */
-document.getElementById("submitOrderButton")?.addEventListener("click", () => {
-  if (!canSubmitOrder()) return alert("عذراً، لقد انتهى وقت استقبال الطلبات لليوم. يرجى المحاولة غداً.");
-  if (!isNameValid()) return;
-  if (currentOrder.length === 0) return alert("يرجى إضافة صنف واحد على الأقل.");
-  showSummary();
-});
+function isNameValid() {
+  const savedName = getSavedUserName().trim();
+  if (!savedName) {
+    alert("من فضلك اكتب اسمك أولاً.");
+    showNameSetupScreen();
+    return false;
+  }
+  return true;
+}
 
-function showSummary() {
-  const summarySection = document.getElementById("orderSummary");
-  const summaryList = document.getElementById("summaryList");
-  const totalEl = document.getElementById("orderTotal");
-  if (!summarySection || !summaryList || !totalEl) return;
-
-  summaryList.innerHTML = "";
-  const filteredOrder = getFilteredCurrentOrder();
-
-  if (filteredOrder.length === 0) {
-    summaryList.innerHTML = `
-      <tr>
-        <td colspan="4" style="font-weight:1000;color:#475569;">
-          لا توجد أصناف في هذا القسم داخل طلبك.
-        </td>
-      </tr>
-    `;
-    totalEl.textContent = "0";
-    summarySection.style.display = "block";
-    document.getElementById("currentOrder").style.display = "none";
+async function loadUserOrderFromDB() {
+  const uid = getCurrentUid();
+  if (!uid) {
+    userOrderDocId = null;
     return;
   }
 
-  let total = 0;
-  filteredOrder.forEach(item => {
-    const row = document.createElement("tr");
-    const rowTotal = item.quantity * item.price;
-    total += rowTotal;
-    row.innerHTML = `<td>${item.name}</td><td>${item.quantity}</td><td>${formatNumber(item.price)}</td><td>${formatNumber(rowTotal)}</td>`;
-    summaryList.appendChild(row);
+  const querySnapshot = await getDocs(collection(db, "orders"));
+  let foundDoc = null;
+
+  querySnapshot.forEach(docSnap => {
+    const data = docSnap.data();
+    if (data.ownerUid === uid) foundDoc = { id: docSnap.id, data };
   });
 
-  totalEl.textContent = String(formatNumber(total));
-  summarySection.style.display = "block";
-  document.getElementById("currentOrder").style.display = "none";
-}
-
-document.getElementById("editSummaryButton")?.addEventListener("click", () => {
-  document.getElementById("orderSummary").style.display = "none";
-  showCurrentOrder();
-});
-
-document.getElementById("confirmOrderButton")?.addEventListener("click", submitOrder);
-
-async function submitOrder() {
-  if (!canSubmitOrder()) return alert("عذراً، لقد انتهى وقت استقبال الطلبات لليوم. يرجى المحاولة غداً.");
-  if (!isNameValid()) return;
-  if (currentOrder.length === 0) return alert("الطلب فارغ. أضف أصناف أولاً.");
-  await saveOrderToFirestore(true);
+  userOrderDocId = foundDoc ? foundDoc.id : null;
 }
 
 async function saveOrderToFirestore(showAlertAfter = false) {
-  if (!canSubmitOrder()) return alert("عذراً، لقد انتهى وقت استقبال الطلبات لليوم. يرجى المحاولة غداً.");
+  if (!canSubmitOrder()) {
+    alert("عذراً، لقد انتهى وقت استقبال الطلبات لليوم. يرجى المحاولة غداً.");
+    return false;
+  }
 
-  const name = document.getElementById("nameInput")?.value?.trim() || "";
-  const uuid = getOrCreateUserUUID();
-  const orderObj = { name };
+  const user = await ensureAnonymousAuth();
+  const name = getSavedUserName().trim();
+  const orderObj = {
+    name,
+    ownerUid: user.uid
+  };
 
   currentOrder.forEach(item => {
-    orderObj[item.id] = item.quantity;
-    orderObj[`${item.id}_price`] = item.price;
+    orderObj[item.id] = toInt(item.quantity);
+    orderObj[`${item.id}_price`] = toInt(item.price);
   });
 
-  orderObj.orderTotal = currentOrder.reduce((acc, item) => acc + item.price * item.quantity, 0);
+  orderObj.orderTotal = toInt(getOrderTotal());
   orderObj.createdAt = new Date().toISOString();
-  orderObj.uuid = uuid;
 
   try {
     if (userOrderDocId) {
@@ -777,18 +678,550 @@ async function saveOrderToFirestore(showAlertAfter = false) {
       if (showAlertAfter) alert("تم إرسال الطلب بنجاح!");
     }
 
-    toggleNameInput(true);
-    await loadUserOrderFromDB();
-
-    const summary = document.getElementById("orderSummary");
-    if (summary) summary.style.display = "none";
-  } catch {
+    return true;
+  } catch (e) {
+    console.error(e);
     alert("حدث خطأ أثناء إرسال الطلب.");
+    return false;
   }
 }
 
 /* ======================
-   عرض الطلبات + زر واتساب + Excel + الطلبات الفردية
+   Aggregated Invoice بدون كسور
+====================== */
+function distributeDeliveryWithoutFractions(users, totalDelivery) {
+  const safeDelivery = toInt(totalDelivery);
+  const totalUnits = users.reduce((acc, user) => acc + toInt(user.units), 0);
+
+  if (safeDelivery <= 0 || totalUnits <= 0) {
+    return users.map(user => ({ ...user, deliveryShare: 0, finalTotal: toInt(user.itemsTotal) }));
+  }
+
+  const baseShares = users.map(user => {
+    const units = toInt(user.units);
+    const rawNumerator = units * safeDelivery;
+    const share = Math.floor(rawNumerator / totalUnits);
+    const remainder = rawNumerator % totalUnits;
+    return { share, remainder };
+  });
+
+  let distributed = baseShares.reduce((acc, x) => acc + x.share, 0);
+  let remaining = safeDelivery - distributed;
+
+  const indexed = baseShares
+    .map((x, idx) => ({ ...x, idx }))
+    .sort((a, b) => b.remainder - a.remainder || b.idx - a.idx);
+
+  for (let i = 0; i < indexed.length && remaining > 0; i += 1) {
+    baseShares[indexed[i].idx].share += 1;
+    remaining -= 1;
+  }
+
+  return users.map((user, idx) => {
+    const deliveryShare = toInt(baseShares[idx].share);
+    return {
+      ...user,
+      deliveryShare,
+      finalTotal: toInt(toInt(user.itemsTotal) + deliveryShare)
+    };
+  });
+}
+
+async function getAggregatedInvoiceData(deliveryCost = 0) {
+  const querySnapshot = await getDocs(collection(db, "orders"));
+  const today = getEgyptDateString();
+
+  const todaysOrders = [];
+  const totalQuantities = {};
+  const totalValues = {};
+  let itemsGrandTotal = 0;
+  let usersCount = 0;
+  let totalUnits = 0;
+
+  itemsList.forEach(item => {
+    totalQuantities[item.id] = 0;
+    totalValues[item.id] = 0;
+  });
+
+  querySnapshot.forEach(docSnap => {
+    const order = docSnap.data();
+    if (!order.createdAt) return;
+
+    const d = new Date(order.createdAt);
+    const egyptOffset = 2 * 60;
+    const egyptTime = new Date(d.getTime() + (egyptOffset - d.getTimezoneOffset()) * 60000);
+    const orderDate = egyptTime.toISOString().split("T")[0];
+    if (orderDate !== today) return;
+
+    const userItems = [];
+    let userItemsTotal = 0;
+    let userUnits = 0;
+
+    itemsList.forEach(item => {
+      const q = toInt(order[item.id] || 0);
+      if (q > 0) {
+        const price = toInt(order[`${item.id}_price`] || item.price || 0);
+        const lineTotal = q * price;
+
+        userItems.push({
+          id: item.id,
+          name: item.name,
+          quantity: q,
+          price,
+          total: lineTotal
+        });
+
+        totalQuantities[item.id] += q;
+        totalValues[item.id] += lineTotal;
+        userItemsTotal += lineTotal;
+        userUnits += q;
+        totalUnits += q;
+      }
+    });
+
+    if (userItems.length > 0) {
+      usersCount++;
+      todaysOrders.push({
+        id: docSnap.id,
+        name: order.name || "بدون اسم",
+        createdAt: order.createdAt,
+        items: userItems,
+        itemsTotal: toInt(userItemsTotal),
+        units: toInt(userUnits)
+      });
+    }
+  });
+
+  itemsList.forEach(item => {
+    if (toInt(totalQuantities[item.id] || 0) > 0) {
+      itemsGrandTotal += toInt(totalValues[item.id] || 0);
+    }
+  });
+
+  const normalizedDeliveryCost = toInt(deliveryCost);
+  const usersDetailed = distributeDeliveryWithoutFractions(todaysOrders, normalizedDeliveryCost);
+  const distributedDeliveryTotal = usersDetailed.reduce((acc, user) => acc + toInt(user.deliveryShare), 0);
+  const grandTotal = toInt(itemsGrandTotal + distributedDeliveryTotal);
+
+  return {
+    dateTimeText: getCurrentDateTimeText(),
+    usersCount,
+    totalUnits: toInt(totalUnits),
+    totalDifferentItems: Object.values(totalQuantities).filter(v => toInt(v) > 0).length,
+    itemsGrandTotal: toInt(itemsGrandTotal),
+    deliveryCost: normalizedDeliveryCost,
+    distributedDeliveryTotal: toInt(distributedDeliveryTotal),
+    grandTotal: toInt(grandTotal),
+    totalQuantities,
+    totalValues,
+    usersDetailed
+  };
+}
+
+function buildAggregatedWhatsAppMessageFromInvoiceData(data) {
+  const lines = [];
+
+  lines.push("ملخص الفاتورة المجمعة:");
+  lines.push("");
+
+  itemsList.forEach(item => {
+    const q = toInt(data.totalQuantities[item.id] || 0);
+    if (q > 0) {
+      lines.push(`• ${item.name}: ${q}`);
+    }
+  });
+
+  lines.push("");
+  lines.push(`تكلفة التوصيل: ${toInt(data.deliveryCost)} ج`);
+  lines.push(`الإجمالي شامل التوصيل: ${toInt(data.grandTotal)} ج`);
+
+  return lines.join("\n");
+}
+
+async function renderAggregatedInvoiceScreen() {
+  const deliveryInput = document.getElementById("aggregatedDeliveryCostInput");
+  const deliveryCost = toInt(deliveryInput?.value || 0);
+  if (deliveryInput) deliveryInput.value = String(deliveryCost);
+
+  const usersCountEl = document.getElementById("aggregatedUsersCount");
+  const unitsCountEl = document.getElementById("aggregatedUnitsCount");
+  const dateTextEl = document.getElementById("aggregatedDateTimeText");
+  const summaryBody = document.getElementById("aggregatedSummaryTableBody");
+  const summaryFoot = document.getElementById("aggregatedSummaryTableFoot");
+  const usersList = document.getElementById("aggregatedUsersDetailsList");
+  const grandTotalEl = document.getElementById("aggregatedGrandTotal");
+  const grandUsersCountEl = document.getElementById("aggregatedGrandUsersCount");
+  const grandItemsCountEl = document.getElementById("aggregatedGrandItemsCount");
+  const grandDeliveryEl = document.getElementById("aggregatedGrandDeliveryValue");
+
+  const data = await getAggregatedInvoiceData(deliveryCost);
+
+  if (usersCountEl) usersCountEl.textContent = String(data.usersCount);
+  if (unitsCountEl) unitsCountEl.textContent = String(data.totalUnits);
+  if (dateTextEl) dateTextEl.textContent = data.dateTimeText;
+
+  if (summaryBody) {
+    const rows = [];
+
+    itemsList.forEach(item => {
+      const quantity = toInt(data.totalQuantities[item.id] || 0);
+      if (quantity > 0) {
+        const price = toInt(item.price || 0);
+        const total = toInt(data.totalValues[item.id] || 0);
+
+        rows.push(`
+          <tr>
+            <td>${item.name}</td>
+            <td>${price} ج</td>
+            <td class="aggregated-highlight">${quantity}</td>
+            <td>${total} ج</td>
+          </tr>
+        `);
+      }
+    });
+
+    if (rows.length === 0) {
+      summaryBody.innerHTML = `<tr><td colspan="4" style="text-align:center;font-weight:900;color:#777;">لا توجد طلبات اليوم.</td></tr>`;
+    } else {
+      summaryBody.innerHTML = rows.join("");
+    }
+  }
+
+  if (summaryFoot) {
+    summaryFoot.innerHTML = `
+      <tr>
+        <td colspan="3" style="font-weight:1000;">الإجمالي الكلي</td>
+        <td class="aggregated-highlight">${data.itemsGrandTotal} ج</td>
+      </tr>
+      <tr>
+        <td colspan="3" style="font-weight:1000;">تكلفة التوصيل</td>
+        <td class="aggregated-highlight">${data.distributedDeliveryTotal} ج</td>
+      </tr>
+      <tr>
+        <td colspan="3" style="font-weight:1000;">الإجمالي شامل التوصيل</td>
+        <td class="aggregated-highlight">${data.grandTotal} ج</td>
+      </tr>
+    `;
+  }
+
+  if (usersList) {
+    if (!data.usersDetailed.length) {
+      usersList.innerHTML = `<div class="user-order-detail-card" style="padding:16px;text-align:center;font-weight:1000;color:#777;">لا توجد طلبات اليوم.</div>`;
+    } else {
+      usersList.innerHTML = data.usersDetailed.map(user => {
+        const firstLetter = String(user.name || "م").trim().charAt(0) || "م";
+        const createdAtText = getShortDateTimeText(user.createdAt);
+
+        return `
+          <div class="user-order-detail-card">
+            <div class="user-order-header">
+              <div>
+                <div class="user-order-total">${user.finalTotal} ج
+                  <small>شامل التوصيل</small>
+                </div>
+              </div>
+
+              <div class="user-order-name-wrap">
+                <div class="user-order-name">${user.name}</div>
+                <div class="user-order-meta">${user.units} وحدة • ${createdAtText}</div>
+              </div>
+
+              <div class="user-order-avatar">${firstLetter}</div>
+            </div>
+
+            <table class="user-order-table">
+              <tbody>
+                ${user.items.map(item => `
+                  <tr>
+                    <td>${item.name}</td>
+                    <td>${item.price} ج</td>
+                    <td class="aggregated-highlight">${item.quantity} ×</td>
+                    <td>${item.total} ج</td>
+                  </tr>
+                `).join("")}
+
+                <tr class="user-order-footer-row">
+                  <td colspan="3">نصيب التوصيل</td>
+                  <td>${user.deliveryShare} ج</td>
+                </tr>
+
+                <tr class="user-order-final-row">
+                  <td colspan="3">الإجمالي النهائي</td>
+                  <td>${user.finalTotal} ج</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        `;
+      }).join("");
+    }
+  }
+
+  if (grandTotalEl) grandTotalEl.textContent = String(data.grandTotal);
+  if (grandUsersCountEl) grandUsersCountEl.textContent = String(data.usersCount);
+  if (grandItemsCountEl) grandItemsCountEl.textContent = String(data.totalDifferentItems);
+  if (grandDeliveryEl) grandDeliveryEl.textContent = String(data.distributedDeliveryTotal);
+}
+
+async function openAggregatedInvoiceScreen() {
+  await renderAggregatedInvoiceScreen();
+  showScreen("aggregatedInvoiceScreen");
+}
+
+/* ======================
+   Admin Orders Management
+====================== */
+function getOrderItemsFromOrderData(order) {
+  const items = [];
+
+  itemsList.forEach(item => {
+    const qty = toInt(order[item.id] || 0);
+    if (qty > 0) {
+      const price = toInt(order[`${item.id}_price`] || item.price || 0);
+      items.push({
+        id: item.id,
+        name: item.name,
+        quantity: qty,
+        price,
+        total: qty * price
+      });
+    }
+  });
+
+  return items;
+}
+
+async function getTodayOrdersForAdmin() {
+  const querySnapshot = await getDocs(collection(db, "orders"));
+  const today = getEgyptDateString();
+  const result = [];
+
+  querySnapshot.forEach(docSnap => {
+    const order = docSnap.data();
+    if (!order.createdAt) return;
+
+    const d = new Date(order.createdAt);
+    const egyptOffset = 2 * 60;
+    const egyptTime = new Date(d.getTime() + (egyptOffset - d.getTimezoneOffset()) * 60000);
+    const orderDate = egyptTime.toISOString().split("T")[0];
+    if (orderDate !== today) return;
+
+    const items = getOrderItemsFromOrderData(order);
+    const total = items.reduce((acc, item) => acc + item.total, 0);
+
+    result.push({
+      id: docSnap.id,
+      name: order.name || "بدون اسم",
+      createdAt: order.createdAt,
+      ownerUid: order.ownerUid || "",
+      items,
+      total
+    });
+  });
+
+  result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return result;
+}
+
+async function saveAdminEditedOrder(orderId, items) {
+  const orderRef = doc(db, "orders", orderId);
+  const currentSnap = await getDoc(orderRef);
+  if (!currentSnap.exists()) {
+    alert("الطلب غير موجود.");
+    return false;
+  }
+
+  const currentData = currentSnap.data();
+  const updatePayload = {
+    name: currentData.name || "بدون اسم",
+    ownerUid: currentData.ownerUid || "",
+    createdAt: currentData.createdAt || new Date().toISOString()
+  };
+
+  itemsList.forEach(item => {
+    updatePayload[item.id] = 0;
+    updatePayload[`${item.id}_price`] = toInt(item.price || 0);
+  });
+
+  items.forEach(item => {
+    updatePayload[item.id] = toInt(item.quantity);
+    updatePayload[`${item.id}_price`] = toInt(item.price);
+  });
+
+  updatePayload.orderTotal = items.reduce((acc, item) => acc + toInt(item.quantity) * toInt(item.price), 0);
+
+  try {
+    await updateDoc(orderRef, updatePayload);
+    return true;
+  } catch (e) {
+    console.error(e);
+    alert("فشل تحديث الطلب.");
+    return false;
+  }
+}
+
+async function deleteOrderCompletely(orderId) {
+  if (!confirm("هل أنت متأكد من حذف الطلب بالكامل نهائيًا؟")) return false;
+
+  try {
+    await deleteDoc(doc(db, "orders", orderId));
+    return true;
+  } catch (e) {
+    console.error(e);
+    alert("فشل حذف الطلب.");
+    return false;
+  }
+}
+
+async function deleteAllOrdersForever() {
+  if (!confirm("سيتم حذف جميع الطلبات لكل الأيام نهائيًا من Firestore. هل أنت متأكد؟")) return;
+  if (!confirm("تأكيد أخير: هذا الإجراء لا يمكن التراجع عنه. متابعة؟")) return;
+
+  try {
+    const snap = await getDocs(collection(db, "orders"));
+    if (snap.empty) {
+      alert("لا توجد طلبات للحذف.");
+      return;
+    }
+
+    let batch = writeBatch(db);
+    let count = 0;
+    let processed = 0;
+
+    for (const docSnap of snap.docs) {
+      batch.delete(doc(db, "orders", docSnap.id));
+      count += 1;
+      processed += 1;
+
+      if (count === 450) {
+        await batch.commit();
+        batch = writeBatch(db);
+        count = 0;
+      }
+    }
+
+    if (count > 0) {
+      await batch.commit();
+    }
+
+    alert(`تم حذف ${processed} طلب نهائيًا.`);
+    await renderAdminOrdersScreen();
+    await renderAggregatedInvoiceScreen();
+  } catch (e) {
+    console.error(e);
+    alert("حدث خطأ أثناء حذف جميع الطلبات.");
+  }
+}
+
+async function renderAdminOrdersScreen() {
+  const list = document.getElementById("adminOrdersList");
+  if (!list) return;
+
+  const orders = await getTodayOrdersForAdmin();
+
+  if (orders.length === 0) {
+    list.innerHTML = `<div class="admin-orders-item" style="text-align:center;font-weight:1000;color:#777;">لا توجد طلبات اليوم.</div>`;
+    return;
+  }
+
+  list.innerHTML = orders.map(order => `
+    <div class="admin-orders-item" data-order-id="${order.id}">
+      <div class="admin-orders-item-head">
+        <div>
+          <div class="admin-orders-item-name">${order.name}</div>
+          <div class="admin-orders-item-meta">${getShortDateTimeText(order.createdAt)} • ${order.items.length} صنف</div>
+        </div>
+        <div style="font-weight:1000;color:#d83000;">${order.total} ج</div>
+      </div>
+
+      <div class="admin-order-lines">
+        ${order.items.map(item => `
+          <div class="admin-order-line" data-item-id="${item.id}">
+            <div>
+              <div class="admin-order-line-name">${item.name}</div>
+              <div style="color:#777;font-size:12px;font-weight:800;">${item.price} ج للوحدة</div>
+            </div>
+
+            <div class="admin-order-line-actions">
+              <button class="admin-mini-btn plus" type="button" data-act="inc">+</button>
+              <div class="admin-order-line-qty">${item.quantity}</div>
+              <button class="admin-mini-btn minus" type="button" data-act="dec">−</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+
+      <div class="admin-order-danger-row">
+        <button class="btn admin-dash-secondary" type="button" data-save-order="${order.id}" style="flex:1;">حفظ التعديل</button>
+        <button class="btn admin-dash-danger" type="button" data-delete-order="${order.id}" style="flex:1;">حذف الطلب بالكامل</button>
+      </div>
+    </div>
+  `).join("");
+
+  orders.forEach(order => {
+    const card = list.querySelector(`[data-order-id="${order.id}"]`);
+    if (!card) return;
+
+    const workingItems = order.items.map(item => ({ ...item }));
+
+    card.querySelectorAll(".admin-order-line").forEach(line => {
+      const itemId = line.getAttribute("data-item-id");
+      const qtyEl = line.querySelector(".admin-order-line-qty");
+      const plusBtn = line.querySelector('[data-act="inc"]');
+      const minusBtn = line.querySelector('[data-act="dec"]');
+
+      plusBtn?.addEventListener("click", () => {
+        const item = workingItems.find(x => x.id === itemId);
+        if (!item) return;
+        item.quantity = toInt(item.quantity + 1);
+        item.total = toInt(item.quantity * item.price);
+        qtyEl.textContent = String(item.quantity);
+      });
+
+      minusBtn?.addEventListener("click", () => {
+        const idx = workingItems.findIndex(x => x.id === itemId);
+        if (idx < 0) return;
+        const item = workingItems[idx];
+        item.quantity = toInt(item.quantity - 1);
+
+        if (item.quantity <= 0) {
+          workingItems.splice(idx, 1);
+          line.remove();
+          return;
+        }
+
+        item.total = toInt(item.quantity * item.price);
+        qtyEl.textContent = String(item.quantity);
+      });
+    });
+
+    card.querySelector(`[data-save-order="${order.id}"]`)?.addEventListener("click", async () => {
+      if (!workingItems.length) {
+        alert("لا يمكن حفظ طلب بدون أصناف. استخدم زر حذف الطلب بالكامل.");
+        return;
+      }
+
+      const ok = await saveAdminEditedOrder(order.id, workingItems);
+      if (!ok) return;
+
+      alert("تم تعديل الطلب بنجاح.");
+      await renderAdminOrdersScreen();
+      await renderAggregatedInvoiceScreen();
+    });
+
+    card.querySelector(`[data-delete-order="${order.id}"]`)?.addEventListener("click", async () => {
+      const ok = await deleteOrderCompletely(order.id);
+      if (!ok) return;
+
+      alert("تم حذف الطلب نهائيًا.");
+      await renderAdminOrdersScreen();
+      await renderAggregatedInvoiceScreen();
+    });
+  });
+}
+
+/* ======================
+   Legacy helpers
 ====================== */
 async function displayOrders() {
   const ordersTableBody = document.getElementById("ordersTableBody");
@@ -798,7 +1231,6 @@ async function displayOrders() {
   let totalQuantities = {};
   let totalValues = {};
   let totalSum = 0;
-  let totalSandwiches = 0;
   let customersCount = 0;
 
   itemsList.forEach(item => {
@@ -812,7 +1244,6 @@ async function displayOrders() {
 
   querySnapshot.forEach(docSnap => {
     const order = docSnap.data();
-    if (order.archived) return;
     if (!order.createdAt) return;
 
     const d = new Date(order.createdAt);
@@ -825,11 +1256,10 @@ async function displayOrders() {
     customersCount++;
 
     itemsList.forEach(item => {
-      const q = parseInt(order[item.id] || 0);
-      if (!isNaN(q) && q > 0) {
+      const q = toInt(order[item.id] || 0);
+      if (q > 0) {
         totalQuantities[item.id] += q;
-        totalValues[item.id] += q * (order[`${item.id}_price`] || item.price || 0);
-        if (item.id !== "delivery") totalSandwiches += q;
+        totalValues[item.id] += q * toInt(order[`${item.id}_price`] || item.price || 0);
       }
     });
   });
@@ -844,24 +1274,15 @@ async function displayOrders() {
       const row = document.createElement("tr");
       row.innerHTML = `<td>${item.name}</td><td>${totalQuantities[item.id]}</td><td>${formatNumber(item.price)} جنيه</td><td>${formatNumber(totalValues[item.id])} جنيه</td>`;
       ordersTableBody.appendChild(row);
-      if (item.id !== "delivery") totalSum += totalValues[item.id];
+      totalSum += totalValues[item.id];
     }
   });
-
-  const deliveryItem = itemsList.find(x => x.id === "delivery");
-  if (deliveryItem && Number(deliveryItem.price || 0) > 0 && totalSandwiches > 0) {
-    totalSum += Number(deliveryItem.price || 0);
-    const deliveryRow = document.createElement("tr");
-    deliveryRow.innerHTML = `<td>خدمة توصيل</td><td colspan="2"></td><td>${formatNumber(deliveryItem.price)} جنيه</td>`;
-    ordersTableBody.appendChild(deliveryRow);
-  }
 
   const usersOutput = document.getElementById("usersOutput");
   if (usersOutput) {
     usersOutput.innerHTML = "";
     querySnapshot.forEach(docSnap => {
       const order = docSnap.data();
-      if (order.archived) return;
       if (!order.createdAt) return;
 
       const d = new Date(order.createdAt);
@@ -881,152 +1302,6 @@ async function displayOrders() {
   ordersTableBody.appendChild(tr);
 }
 
-async function getTodaysAggregatedOrdersData() {
-  const querySnapshot = await getDocs(collection(db, "orders"));
-  const today = getEgyptDateString();
-
-  let totalQuantities = {};
-  let totalValues = {};
-  let totalSum = 0;
-  let totalSandwiches = 0;
-  let customersCount = 0;
-
-  itemsList.forEach(item => {
-    totalQuantities[item.id] = 0;
-    totalValues[item.id] = 0;
-  });
-
-  querySnapshot.forEach(docSnap => {
-    const order = docSnap.data();
-    if (order.archived) return;
-    if (!order.createdAt) return;
-
-    const d = new Date(order.createdAt);
-    const egyptOffset = 2 * 60;
-    const egyptTime = new Date(d.getTime() + (egyptOffset - d.getTimezoneOffset()) * 60000);
-    const orderDate = egyptTime.toISOString().split("T")[0];
-    if (orderDate !== today) return;
-
-    customersCount++;
-
-    itemsList.forEach(item => {
-      const q = parseInt(order[item.id] || 0);
-      if (!isNaN(q) && q > 0) {
-        totalQuantities[item.id] += q;
-        totalValues[item.id] += q * (order[`${item.id}_price`] || item.price || 0);
-        if (item.id !== "delivery") totalSandwiches += q;
-      }
-    });
-  });
-
-  itemsList.forEach(item => {
-    if (Number(totalQuantities[item.id] || 0) > 0 && item.id !== "delivery") {
-      totalSum += Number(totalValues[item.id] || 0);
-    }
-  });
-
-  const deliveryItem = itemsList.find(x => x.id === "delivery");
-  if (deliveryItem && Number(deliveryItem.price || 0) > 0 && totalSandwiches > 0) {
-    totalSum += Number(deliveryItem.price || 0);
-  }
-
-  return {
-    today,
-    customersCount,
-    totalQuantities,
-    totalValues,
-    totalSum,
-    totalSandwiches,
-    deliveryItem
-  };
-}
-
-function buildWhatsAppAggregatedMessage(data) {
-  const lines = [];
-
-  itemsList.forEach(item => {
-    const q = Number(data.totalQuantities[item.id] || 0);
-    if (q > 0 && item.id !== "delivery") {
-      lines.push(`• ${item.name}: ${formatNumber(q)}`);
-    }
-  });
-
-  if (lines.length === 0) return "لا توجد أصناف اليوم.";
-  return lines.join("\n");
-}
-
-async function sendAggregatedOrdersToWhatsApp() {
-  const number = normalizeWhatsAppNumber(getRestaurantWhatsAppNumber());
-  if (!number) {
-    openWhatsAppModal(true);
-    return;
-  }
-
-  try {
-    const data = await getTodaysAggregatedOrdersData();
-    if (!data.customersCount) {
-      alert("لا توجد طلبات اليوم لإرسالها.");
-      return;
-    }
-
-    const msg = buildWhatsAppAggregatedMessage(data);
-    const url = `https://wa.me/${number}?text=${encodeURIComponent(msg)}`;
-    window.open(url, "_blank");
-  } catch (e) {
-    console.error(e);
-    alert("حدث خطأ أثناء تجهيز رسالة واتساب.");
-  }
-}
-
-/* ======================
-   WhatsApp Modal UI
-====================== */
-function openWhatsAppModal(fromSend = false) {
-  const modal = document.getElementById("whatsAppModal");
-  const input = document.getElementById("whatsAppNumberInput");
-  const msg = document.getElementById("whatsAppMsg");
-
-  if (!modal || !input || !msg) return;
-
-  msg.style.color = "";
-  msg.textContent = fromSend ? "اكتب رقم واتساب المطعم ثم اضغط إرسال." : "";
-
-  input.value = getRestaurantWhatsAppNumber() || "";
-  modal.style.display = "flex";
-}
-
-function closeWhatsAppModal() {
-  const modal = document.getElementById("whatsAppModal");
-  if (modal) modal.style.display = "none";
-}
-
-document.getElementById("openWhatsAppModalBtn")?.addEventListener("click", () => openWhatsAppModal(false));
-document.getElementById("closeWhatsAppModalBtn")?.addEventListener("click", closeWhatsAppModal);
-
-document.getElementById("sendWhatsAppBtn")?.addEventListener("click", async () => {
-  const input = document.getElementById("whatsAppNumberInput");
-  const msg = document.getElementById("whatsAppMsg");
-  const number = normalizeWhatsAppNumber(input?.value || "");
-
-  msg.textContent = "";
-  msg.style.color = "";
-
-  if (!number || number.length < 8) {
-    msg.textContent = "اكتب رقم صحيح بصيغة دولية بدون + (مثال: 2010xxxxxxx).";
-    return;
-  }
-
-  setRestaurantWhatsAppNumber(number);
-  msg.style.color = "#166534";
-  msg.textContent = "تم حفظ الرقم. جاري تجهيز الرسالة...";
-
-  setTimeout(closeWhatsAppModal, 200);
-  await sendAggregatedOrdersToWhatsApp();
-});
-
-/* ======================
-   الطلبات الفردية
-====================== */
 async function displayIndividualOrders() {
   const out = document.getElementById("individualOrdersOutput");
   if (!out) return;
@@ -1037,7 +1312,6 @@ async function displayIndividualOrders() {
   const todaysOrders = [];
   querySnapshot.forEach(docSnap => {
     const order = docSnap.data();
-    if (order.archived) return;
     if (!order.createdAt) return;
 
     const d = new Date(order.createdAt);
@@ -1054,121 +1328,35 @@ async function displayIndividualOrders() {
     return;
   }
 
-  out.innerHTML = todaysOrders
-    .map(o => {
-      const lines = [];
-      itemsList.forEach(item => {
-        const q = Number(o[item.id] || 0);
-        if (q > 0) {
-          const price = Number(o[`${item.id}_price`] || item.price || 0);
-          lines.push(`${item.name}: ${q} × ${price} = ${q * price}`);
-        }
-      });
+  out.innerHTML = todaysOrders.map(o => {
+    const lines = [];
+    itemsList.forEach(item => {
+      const q = toInt(o[item.id] || 0);
+      if (q > 0) {
+        const price = toInt(o[`${item.id}_price`] || item.price || 0);
+        lines.push(`${item.name}: ${q} × ${price} = ${q * price}`);
+      }
+    });
 
-      return `
+    return `
       <div class="glass" style="padding:12px;border-radius:16px;margin-bottom:10px;">
         <div style="font-weight:1000;margin-bottom:6px;">${o.name || "بدون اسم"}</div>
         <pre style="white-space:pre-wrap;margin:0;color:#334155;font-weight:800;font-size:13px;">${lines.join("\n")}</pre>
       </div>
     `;
-    })
-    .join("");
+  }).join("");
 }
-
-function toggleSections(sectionToShow) {
-  const sections = ["ordersSection", "individualOrdersSection"];
-  sections.forEach(section => {
-    const el = document.getElementById(section);
-    if (!el) return;
-    el.style.display = section === sectionToShow ? "block" : "none";
-  });
-}
-
-document.getElementById("viewOrdersButton")?.addEventListener("click", () => {
-  toggleSections("ordersSection");
-  displayOrders();
-});
-
-document.getElementById("viewIndividualOrdersButton")?.addEventListener("click", () => {
-  toggleSections("individualOrdersSection");
-  displayIndividualOrders();
-});
-
-document.getElementById("exportExcelButton")?.addEventListener("click", async () => {
-  const XLSX = window.XLSX;
-  if (!XLSX) return alert("مكتبة التصدير غير محملة");
-
-  const querySnapshot = await getDocs(collection(db, "orders"));
-  let userOrders = {};
-  let users = [];
-  const today = getEgyptDateString();
-
-  querySnapshot.forEach(docSnap => {
-    const order = docSnap.data();
-    if (order.archived) return;
-    if (!order.createdAt) return;
-
-    const d = new Date(order.createdAt);
-    const egyptOffset = 2 * 60;
-    const egyptTime = new Date(d.getTime() + (egyptOffset - d.getTimezoneOffset()) * 60000);
-    const orderDate = egyptTime.toISOString().split("T")[0];
-    if (orderDate !== today) return;
-
-    const name = order.name || "بدون اسم";
-    if (!userOrders[name]) {
-      userOrders[name] = [];
-      users.push(name);
-    }
-    userOrders[name].push(order);
-  });
-
-  let mergedUserOrders = {};
-  users.forEach(name => {
-    let merged = {};
-    userOrders[name].forEach(order => {
-      for (let key in order) {
-        if (["name", "createdAt", "archived", "orderTotal", "uuid"].includes(key)) continue;
-        if (key.endsWith("_price")) merged[key] = order[key];
-        else merged[key] = (merged[key] || 0) + Number(order[key] || 0);
-      }
-    });
-    mergedUserOrders[name] = merged;
-  });
-
-  let rows = [];
-  rows.push(["الاسم", "تفاصيل الطلب", "عدد السندوتشات", "الإجمالي"]);
-
-  users.forEach(name => {
-    const merged = mergedUserOrders[name];
-    let orderDetails = "";
-    let orderTotal = 0;
-    let sandwichCount = 0;
-
-    itemsList.forEach(item => {
-      if (Number(merged[item.id] || 0) > 0) {
-        let price = Number(merged[`${item.id}_price`] || item.price || 0);
-        let quantity = Number(merged[item.id] || 0);
-        orderTotal += price * quantity;
-        if (item.id !== "delivery") sandwichCount += quantity;
-        orderDetails += `${item.name}: ${quantity} × ${price} = ${quantity * price} جنيه\n`;
-      }
-    });
-
-    rows.push([name, orderDetails.trim(), sandwichCount, orderTotal]);
-  });
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "الطلبيات");
-
-  XLSX.writeFile(wb, "orders.xlsx", { bookType: "xlsx", type: "binary", bom: true });
-});
 
 /* ======================
-   Admin: helpers + UI
+   Admin UI
 ====================== */
 function isAdminUser() {
-  return !!(auth.currentUser && auth.currentUser.email && auth.currentUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase());
+  return !!(
+    auth.currentUser &&
+    !auth.currentUser.isAnonymous &&
+    auth.currentUser.email &&
+    auth.currentUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()
+  );
 }
 
 function requireAdminOrAlert() {
@@ -1188,7 +1376,12 @@ function updateAdminUI(user) {
   const manageCatsBtn = document.getElementById("manageCategoriesBtn");
   const adminSection = document.getElementById("adminSection");
 
-  const isAdmin = !!(user && user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase());
+  const isAdmin = !!(
+    user &&
+    !user.isAnonymous &&
+    user.email &&
+    user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()
+  );
 
   if (adminSection) adminSection.style.display = "block";
 
@@ -1209,7 +1402,18 @@ function updateAdminUI(user) {
   }
 }
 
-onAuthStateChanged(auth, (user) => updateAdminUI(user));
+onAuthStateChanged(auth, async (user) => {
+  updateAdminUI(user);
+
+  if (!user) {
+    await ensureAnonymousAuth();
+    return;
+  }
+
+  if (user.isAnonymous) {
+    await loadUserOrderFromDB();
+  }
+});
 
 document.getElementById("adminLoginBtn")?.addEventListener("click", () => {
   document.getElementById("adminEmail").value = "";
@@ -1233,9 +1437,11 @@ document.getElementById("adminLoginConfirmBtn")?.addEventListener("click", async
 
     if (cred.user.email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
       await signOut(auth);
+      await ensureAnonymousAuth();
       msg.textContent = "ليس لديك صلاحية الأدمن!";
     } else {
       document.getElementById("adminLoginModal").style.display = "none";
+      showScreen("adminDashboardScreen");
     }
   } catch (e) {
     console.error("Admin login failed:", e);
@@ -1249,10 +1455,13 @@ document.getElementById("adminLoginConfirmBtn")?.addEventListener("click", async
   }
 });
 
-document.getElementById("adminLogoutBtn")?.addEventListener("click", () => signOut(auth));
+document.getElementById("adminLogoutBtn")?.addEventListener("click", async () => {
+  await signOut(auth);
+  await ensureAnonymousAuth();
+});
 
 /* ======================
-   Admin: Cutoff Time
+   Admin Cutoff
 ====================== */
 function openCutoffTimeModal() {
   if (!requireAdminOrAlert()) return;
@@ -1321,7 +1530,7 @@ document.getElementById("closeCutoffTimeModal")?.addEventListener("click", close
 document.getElementById("saveCutoffTimeBtn")?.addEventListener("click", saveCutoffTime);
 
 /* ======================
-   Admin: Items (Professional)
+   Admin Items
 ====================== */
 function ensureAdminItemsModals() {
   if (!document.getElementById("itemsManageModal")) {
@@ -1429,11 +1638,10 @@ function renderAdminItemsList() {
     return;
   }
 
-  wrap.innerHTML = pageItems
-    .map(item => {
-      const cat = item.category || guessCategory(item);
-      const catLabel = getCategoryLabelById(cat);
-      return `
+  wrap.innerHTML = pageItems.map(item => {
+    const cat = item.category || guessCategory(item);
+    const catLabel = getCategoryLabelById(cat);
+    return `
       <div class="glass" style="padding:12px;border-radius:16px;margin-bottom:10px;display:flex;justify-content:space-between;gap:10px;align-items:center;">
         <div style="flex:1;">
           <div style="font-weight:1000;">${item.name}</div>
@@ -1441,13 +1649,10 @@ function renderAdminItemsList() {
             ${formatNumber(item.price)} جنيه • ${catLabel} • ID: ${item.id}
           </div>
         </div>
-        <button class="btn btn-primary" type="button" data-edit-item="${item.id}" style="white-space:nowrap;">
-          تعديل
-        </button>
+        <button class="btn btn-primary" type="button" data-edit-item="${item.id}" style="white-space:nowrap;">تعديل</button>
       </div>
     `;
-    })
-    .join("");
+  }).join("");
 
   wrap.querySelectorAll("[data-edit-item]").forEach(btn => {
     btn.addEventListener("click", () => openSingleEditModal(btn.getAttribute("data-edit-item")));
@@ -1522,7 +1727,7 @@ function openSingleEditModal(itemId) {
 
   if (meta) meta.textContent = `ID: ${item.id}`;
   if (name) name.value = item.name || "";
-  if (price) price.value = String(Number(item.price || 0));
+  if (price) price.value = String(toInt(item.price || 0));
 
   refreshAdminCategoryDropdowns();
   if (cat) cat.value = item.category || guessCategory(item);
@@ -1543,25 +1748,23 @@ function openSingleEditModal(itemId) {
 
       const msgEl = document.getElementById("singleEditMsg");
       const newName = (document.getElementById("singleEditName")?.value || "").trim();
-      const newPrice = Number(document.getElementById("singleEditPrice")?.value || 0);
+      const newPrice = toInt(document.getElementById("singleEditPrice")?.value || 0);
       const newCat = (document.getElementById("singleEditCategory")?.value || "").trim();
 
       msgEl.style.color = "";
       msgEl.textContent = "";
 
       if (!newName) return (msgEl.textContent = "الاسم لا يمكن أن يكون فارغ.");
-      if (!Number.isFinite(newPrice) || newPrice < 0) return (msgEl.textContent = "السعر غير صحيح.");
+      if (newPrice < 0) return (msgEl.textContent = "السعر غير صحيح.");
       if (!newCat) return (msgEl.textContent = "اختر قسم.");
 
       try {
         await updateDoc(doc(db, "items", currentEditingItemId), { name: newName, price: newPrice, category: newCat });
-
         msgEl.style.color = "#166534";
         msgEl.textContent = "تم الحفظ.";
-
         await loadItems();
         renderAdminItemsList();
-
+        renderItemsGrid();
         setTimeout(closeSingleEditModal, 250);
       } catch (e) {
         console.error(e);
@@ -1582,6 +1785,7 @@ function openSingleEditModal(itemId) {
         await deleteDoc(doc(db, "items", currentEditingItemId));
         await loadItems();
         renderAdminItemsList();
+        renderItemsGrid();
         closeSingleEditModal();
       } catch (e) {
         console.error(e);
@@ -1596,7 +1800,7 @@ function openSingleEditModal(itemId) {
 document.getElementById("editItemsBtn")?.addEventListener("click", openItemsManageModal);
 
 /* ======================
-   Admin: Add Item (with category)
+   Admin Add Item
 ====================== */
 function openAddItemModal() {
   if (!requireAdminOrAlert()) return;
@@ -1634,19 +1838,20 @@ async function confirmAddItem() {
   const msgEl = document.getElementById("modalAddItemMsg");
 
   const name = (nameEl?.value || "").trim();
-  const price = Number(priceEl?.value || 0);
+  const price = toInt(priceEl?.value || 0);
   const category = (catEl?.value || "").trim();
 
   if (!msgEl) return;
 
   msgEl.textContent = "";
   if (!name) return (msgEl.textContent = "اكتب اسم الصنف أولاً.");
-  if (!Number.isFinite(price) || price <= 0) return (msgEl.textContent = "اكتب سعر صحيح أكبر من صفر.");
+  if (price <= 0) return (msgEl.textContent = "اكتب سعر صحيح أكبر من صفر.");
   if (!category) return (msgEl.textContent = "اختر قسم.");
 
   try {
     await addDoc(collection(db, "items"), { name, price, category });
     await loadItems();
+    renderItemsGrid();
     closeAddItemModal();
   } catch (e) {
     console.error(e);
@@ -1657,7 +1862,7 @@ async function confirmAddItem() {
 document.getElementById("confirmAddItem")?.addEventListener("click", confirmAddItem);
 
 /* ======================
-   Admin: Manage Categories
+   Categories Admin
 ====================== */
 function ensureCategoriesModal() {
   if (document.getElementById("categoriesModal")) return;
@@ -1728,14 +1933,13 @@ async function addCategoryFromModal() {
 
   try {
     await setDoc(doc(db, "categories", id), { label, icon, sort: Date.now() }, { merge: true });
-
     idEl.value = "";
     labelEl.value = "";
     iconEl.value = "";
     msgEl.textContent = "";
-
     await loadCategories();
     renderCategoriesList();
+    renderCategoryChips();
   } catch (e) {
     console.error(e);
     msgEl.textContent = "فشل إضافة القسم.";
@@ -1748,9 +1952,7 @@ function renderCategoriesList() {
 
   const list = categories.filter(c => c.id !== "all");
 
-  wrap.innerHTML = list
-    .map(
-      c => `
+  wrap.innerHTML = list.map(c => `
     <div class="glass" style="padding:12px;border-radius:16px;margin-bottom:10px;">
       <div style="font-weight:1000;margin-bottom:8px;">
         ${c.label} <span style="color:#64748b;font-weight:900;">(ID: ${c.id})</span>
@@ -1769,9 +1971,7 @@ function renderCategoriesList() {
         <button class="btn btn-soft" type="button" data-cat-del="${c.id}" style="flex:1;background:rgba(239,68,68,.12);color:#991b1b;">حذف</button>
       </div>
     </div>
-  `
-    )
-    .join("");
+  `).join("");
 
   wrap.querySelectorAll("[data-cat-save]").forEach(btn => {
     btn.addEventListener("click", () => saveCategory(btn.getAttribute("data-cat-save")));
@@ -1798,9 +1998,9 @@ async function saveCategory(catId) {
     await setDoc(doc(db, "categories", catId), { label, icon }, { merge: true });
     msg.style.color = "#166534";
     msg.textContent = "تم الحفظ.";
-
     await loadCategories();
     renderCategoriesList();
+    renderCategoryChips();
   } catch (e) {
     console.error(e);
     msg.textContent = "فشل الحفظ.";
@@ -1830,13 +2030,283 @@ async function deleteCategory(catId) {
     await deleteDoc(doc(db, "categories", catId));
     await loadCategories();
     renderCategoriesList();
+    renderCategoryChips();
   } catch (e) {
     console.error(e);
     alert("فشل حذف القسم.");
   }
 }
 
-// PWA Service Worker
+/* ======================
+   Screen Events
+====================== */
+document.getElementById("enterAppBtn")?.addEventListener("click", async () => {
+  markAppAsEntered();
+  await ensureAnonymousAuth();
+  continueIntoAppFlow();
+});
+
+document.getElementById("saveFirstUserNameBtn")?.addEventListener("click", () => {
+  const input = document.getElementById("firstUserNameInput");
+  const msg = document.getElementById("firstUserNameMsg");
+  const value = String(input?.value || "").trim();
+
+  if (!value) {
+    if (msg) msg.textContent = "من فضلك اكتب اسمك أولاً.";
+    return;
+  }
+
+  if (msg) msg.textContent = "";
+  saveUserName(value);
+  syncUserNameAcrossUI();
+  showAppShell();
+  showScreen("homeScreen");
+});
+
+document.getElementById("goToMenuBtn")?.addEventListener("click", () => {
+  renderItemsGrid();
+  renderStickyOrderSummary();
+  showScreen("menuScreen");
+});
+
+document.getElementById("backToHomeFromMenu")?.addEventListener("click", () => {
+  showScreen("homeScreen");
+});
+
+document.getElementById("openReviewScreenBtn")?.addEventListener("click", () => {
+  if (!isNameValid()) return;
+  if (currentOrder.length === 0) return;
+  renderReviewScreen();
+  showScreen("reviewScreen");
+});
+
+document.getElementById("backToMenuFromReview")?.addEventListener("click", () => {
+  showScreen("menuScreen");
+});
+
+document.getElementById("confirmOrderButton")?.addEventListener("click", async () => {
+  if (!isNameValid()) return;
+  if (currentOrder.length === 0) return alert("الطلب فارغ.");
+
+  lastSubmittedOrderSnapshot = currentOrder.map(item => ({
+    ...item,
+    quantity: toInt(item.quantity),
+    price: toInt(item.price)
+  }));
+
+  const ok = await saveOrderToFirestore(false);
+  if (!ok) return;
+
+  renderSuccessScreen();
+  currentOrder = [];
+  renderItemsGrid();
+  renderStickyOrderSummary();
+  showScreen("successScreen");
+});
+
+document.getElementById("successBackHomeBtn")?.addEventListener("click", () => {
+  showScreen("homeScreen");
+});
+
+document.getElementById("showAggregatedInvoiceBtn")?.addEventListener("click", openAggregatedInvoiceScreen);
+document.getElementById("successShowAggregatedBtn")?.addEventListener("click", openAggregatedInvoiceScreen);
+
+document.getElementById("backFromAggregatedInvoiceBtn")?.addEventListener("click", () => {
+  showScreen("homeScreen");
+});
+
+document.getElementById("aggregatedAddNewOrderBtn")?.addEventListener("click", () => {
+  showScreen("menuScreen");
+});
+
+document.getElementById("aggregatedDeliveryCostInput")?.addEventListener("input", () => {
+  renderAggregatedInvoiceScreen();
+});
+
+document.getElementById("aggregatedWhatsAppBtn")?.addEventListener("click", async () => {
+  const number = normalizeWhatsAppNumber(getRestaurantWhatsAppNumber());
+  if (!number) {
+    openWhatsAppModal(true);
+    return;
+  }
+
+  try {
+    const deliveryCost = toInt(document.getElementById("aggregatedDeliveryCostInput")?.value || 0);
+    const data = await getAggregatedInvoiceData(deliveryCost);
+
+    if (!data.usersCount) {
+      alert("لا توجد طلبات اليوم لإرسالها.");
+      return;
+    }
+
+    const msg = buildAggregatedWhatsAppMessageFromInvoiceData(data);
+    const url = `https://wa.me/${number}?text=${encodeURIComponent(msg)}`;
+    window.open(url, "_blank");
+  } catch (e) {
+    console.error(e);
+    alert("حدث خطأ أثناء تجهيز رسالة واتساب.");
+  }
+});
+
+document.getElementById("aggregatedExcelBtn")?.addEventListener("click", () => {
+  document.getElementById("exportExcelButton")?.click();
+});
+
+document.getElementById("openAdminFromHomeBtn")?.addEventListener("click", () => {
+  if (isAdminUser()) {
+    showScreen("adminDashboardScreen");
+    return;
+  }
+
+  document.getElementById("adminEmail").value = "";
+  document.getElementById("adminPassword").value = "";
+  document.getElementById("adminLoginMsg").textContent = "";
+  document.getElementById("adminLoginModal").style.display = "flex";
+});
+
+document.getElementById("backFromAdminDashboardBtn")?.addEventListener("click", async () => {
+  if (!isAdminUser()) {
+    await ensureAnonymousAuth();
+  }
+  showScreen("homeScreen");
+});
+
+document.getElementById("adminDashAddItemBtn")?.addEventListener("click", () => {
+  openAddItemModal();
+});
+
+document.getElementById("adminDashEditItemsBtn")?.addEventListener("click", () => {
+  openItemsManageModal();
+});
+
+document.getElementById("adminDashEditCutoffBtn")?.addEventListener("click", () => {
+  openCutoffTimeModal();
+});
+
+document.getElementById("adminDashManageCategoriesBtn")?.addEventListener("click", () => {
+  openCategoriesModal();
+});
+
+document.getElementById("adminDashManageOrdersBtn")?.addEventListener("click", async () => {
+  await renderAdminOrdersScreen();
+  showScreen("adminOrdersScreen");
+});
+
+document.getElementById("adminDashDeleteAllOrdersBtn")?.addEventListener("click", async () => {
+  if (!requireAdminOrAlert()) return;
+  await deleteAllOrdersForever();
+});
+
+document.getElementById("adminDashLogoutBtn")?.addEventListener("click", async () => {
+  await signOut(auth);
+  await ensureAnonymousAuth();
+  showScreen("homeScreen");
+});
+
+document.getElementById("backFromAdminOrdersBtn")?.addEventListener("click", () => {
+  showScreen("adminDashboardScreen");
+});
+
+document.getElementById("refreshAdminOrdersBtn")?.addEventListener("click", async () => {
+  await renderAdminOrdersScreen();
+});
+
+document.getElementById("openWhatsAppModalBtn")?.addEventListener("click", () => openWhatsAppModal(false));
+document.getElementById("closeWhatsAppModalBtn")?.addEventListener("click", closeWhatsAppModal);
+
+document.getElementById("sendWhatsAppBtn")?.addEventListener("click", async () => {
+  const input = document.getElementById("whatsAppNumberInput");
+  const msg = document.getElementById("whatsAppMsg");
+  const number = normalizeWhatsAppNumber(input?.value || "");
+
+  msg.textContent = "";
+  msg.style.color = "";
+
+  if (!number || number.length < 8) {
+    msg.textContent = "اكتب رقم صحيح بصيغة دولية بدون + (مثال: 2010xxxxxxx).";
+    return;
+  }
+
+  setRestaurantWhatsAppNumber(number);
+  msg.style.color = "#166534";
+  msg.textContent = "تم حفظ الرقم.";
+  setTimeout(closeWhatsAppModal, 200);
+});
+
+document.getElementById("viewOrdersButton")?.addEventListener("click", displayOrders);
+document.getElementById("viewIndividualOrdersButton")?.addEventListener("click", displayIndividualOrders);
+
+document.getElementById("exportExcelButton")?.addEventListener("click", async () => {
+  const XLSX = window.XLSX;
+  if (!XLSX) return alert("مكتبة التصدير غير محملة");
+
+  const querySnapshot = await getDocs(collection(db, "orders"));
+  let userOrders = {};
+  let users = [];
+  const today = getEgyptDateString();
+
+  querySnapshot.forEach(docSnap => {
+    const order = docSnap.data();
+    if (!order.createdAt) return;
+
+    const d = new Date(order.createdAt);
+    const egyptOffset = 2 * 60;
+    const egyptTime = new Date(d.getTime() + (egyptOffset - d.getTimezoneOffset()) * 60000);
+    const orderDate = egyptTime.toISOString().split("T")[0];
+    if (orderDate !== today) return;
+
+    const name = order.name || "بدون اسم";
+    if (!userOrders[name]) {
+      userOrders[name] = [];
+      users.push(name);
+    }
+    userOrders[name].push(order);
+  });
+
+  let mergedUserOrders = {};
+  users.forEach(name => {
+    let merged = {};
+    userOrders[name].forEach(order => {
+      for (let key in order) {
+        if (["name", "createdAt", "orderTotal", "uuid", "ownerUid"].includes(key)) continue;
+        if (key.endsWith("_price")) merged[key] = toInt(order[key]);
+        else merged[key] = toInt(merged[key] || 0) + toInt(order[key] || 0);
+      }
+    });
+    mergedUserOrders[name] = merged;
+  });
+
+  let rows = [];
+  rows.push(["الاسم", "تفاصيل الطلب", "عدد الوحدات", "الإجمالي"]);
+
+  users.forEach(name => {
+    const merged = mergedUserOrders[name];
+    let orderDetails = "";
+    let orderTotal = 0;
+    let unitsCount = 0;
+
+    itemsList.forEach(item => {
+      if (toInt(merged[item.id] || 0) > 0) {
+        const price = toInt(merged[`${item.id}_price`] || item.price || 0);
+        const quantity = toInt(merged[item.id] || 0);
+        orderTotal += price * quantity;
+        unitsCount += quantity;
+        orderDetails += `${item.name}: ${quantity} × ${price} = ${quantity * price} جنيه\n`;
+      }
+    });
+
+    rows.push([name, orderDetails.trim(), unitsCount, orderTotal]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "الطلبيات");
+  XLSX.writeFile(wb, "orders.xlsx", { bookType: "xlsx", type: "binary", bom: true });
+});
+
+/* ======================
+   Service Worker
+====================== */
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("./sw.js").catch(console.error);
@@ -1844,16 +2314,21 @@ if ("serviceWorker" in navigator) {
 }
 
 /* ======================
-   بدء التشغيل
+   Startup
 ====================== */
 window.addEventListener("load", async () => {
-  initWelcomeScreen();
-  renderCategoryChips();
+  await ensureAnonymousAuth();
 
-  await autoArchiveOldOrders();
+  if (!hasEnteredAppBefore()) {
+    showWelcomeScreen();
+  } else {
+    continueIntoAppFlow();
+  }
+
   await loadCategories();
   await loadItems();
   await loadUserOrderFromDB();
   await loadCutoffTime();
   startCountdown();
+  syncUserNameAcrossUI();
 });
