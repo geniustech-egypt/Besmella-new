@@ -3,11 +3,11 @@
   --ink:#0f172a;
   --muted:#64748b;
 
-  --brand1:#b80f0a;
-  --brand2:#7a0704;
+  --brand1:#9b0f07;
+  --brand2:#650700;
+  --brand3:#c61a0f;
 
   --card:#ffffff;
-
   --line: rgba(2,6,23,.10);
   --radius:18px;
   --shadow: 0 18px 45px rgba(2,6,23,.12);
@@ -31,6 +31,148 @@ body{
   display:flex;
   flex-direction:column;
   min-height:100vh;
+}
+
+body.welcome-mode{
+  background: linear-gradient(180deg, #8d0d06 0%, #6f0802 100%);
+}
+
+.app-shell{
+  display:block;
+}
+
+.app-shell.is-hidden{
+  display:none;
+}
+
+/* ===== Welcome Screen ===== */
+.welcome-screen{
+  min-height:100vh;
+  display:none;
+  background:
+    radial-gradient(260px 180px at 12% 8%, rgba(255,255,255,.08), transparent 70%),
+    radial-gradient(320px 220px at 90% 15%, rgba(255,255,255,.06), transparent 70%),
+    linear-gradient(180deg, #8f0b05 0%, #6c0602 100%);
+  color:#fff;
+  padding: 18px 12px 24px;
+}
+
+.welcome-screen.is-visible{
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+}
+
+.welcome-shell{
+  width:min(1280px, 100%);
+  margin:0 auto;
+}
+
+.welcome-header{
+  text-align:center;
+  padding-top: 6px;
+  margin-bottom: 18px;
+}
+
+.welcome-title{
+  margin:0;
+  font-size: clamp(44px, 8vw, 72px);
+  line-height:1;
+  letter-spacing:.14em;
+  font-weight:1000;
+  color:#fff;
+  text-transform:uppercase;
+}
+
+.welcome-subtitle{
+  margin: 12px 0 0;
+  font-size: clamp(18px, 2.2vw, 32px);
+  font-weight:900;
+  color: rgba(255,255,255,.88);
+}
+
+.welcome-gallery{
+  margin-top: 18px;
+}
+
+.welcome-grid{
+  display:grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 12px;
+}
+
+.welcome-card{
+  min-height: 220px;
+  border-radius: 28px;
+  overflow:hidden;
+  background-color:#2b0907;
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+  position:relative;
+  box-shadow: 0 18px 32px rgba(0,0,0,.22);
+}
+
+.welcome-card::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background: linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.28));
+}
+
+.welcome-card.small-left{ grid-column: span 4; min-height: 240px; }
+.welcome-card.hero-right{ grid-column: span 8; min-height: 240px; }
+.welcome-card.bottom-left{ grid-column: span 4; min-height: 240px; }
+.welcome-card.bottom-middle{ grid-column: span 4; min-height: 240px; }
+.welcome-card.bottom-right{ grid-column: span 4; min-height: 240px; }
+
+.welcome-copy{
+  text-align:center;
+  margin: 26px 0 18px;
+}
+
+.welcome-copy p{
+  margin:0;
+  font-size: clamp(20px, 2vw, 34px);
+  font-weight:1000;
+  color:#fff;
+}
+
+.welcome-actions{
+  display:flex;
+  justify-content:center;
+}
+
+.welcome-signin-btn{
+  width:min(98%, 1240px);
+  min-height:72px;
+  border:none;
+  border-radius: 28px;
+  background:#fff;
+  color:#d94711;
+  font-family:inherit;
+  font-size: clamp(22px, 2.2vw, 40px);
+  font-weight:1000;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap: 12px;
+  box-shadow: 0 18px 40px rgba(0,0,0,.20);
+  transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease;
+}
+
+.welcome-signin-btn:hover{
+  transform: translateY(-2px);
+  box-shadow: 0 22px 44px rgba(0,0,0,.24);
+}
+
+.welcome-signin-btn:active{
+  transform: translateY(0);
+}
+
+.welcome-signin-btn i{
+  font-size: .95em;
 }
 
 /* ===== HERO ===== */
@@ -64,8 +206,8 @@ body{
   font-weight: 1000;
   color:#fff;
   text-transform: uppercase;
-  text-align:center; /* إضافة */
-  width:100%;        /* إضافة */
+  text-align:center;
+  width:100%;
 }
 
 .hero-pill{
@@ -591,14 +733,6 @@ th{
   font-size: 13px;
 }
 
-@media (max-width:420px){
-  .hero-title{ font-size: 40px; }
-  .items-grid{ grid-template-columns: 1fr; }
-  .fixed-grid{
-    grid-template-columns: 1fr 1fr 1fr;
-  }
-}
-
 /* Footer */
 footer{
   margin-top: 8px;
@@ -607,6 +741,7 @@ footer{
   padding: 12px 0 18px;
   font-size: 12px;
 }
+
 /* ===== Fixed Gallery - Entrance Animation ===== */
 .fixed-gallery{
   opacity: 0;
@@ -621,30 +756,91 @@ footer{
   }
 }
 
-/* حركة بسيطة للصور نفسها (حيوية خفيفة) */
 .fixed-card{
   transform: translateY(0) scale(1);
   animation: cardFloat 3.8s ease-in-out infinite;
 }
 
-/* نعمل اختلاف توقيت بين الكروت */
 .fixed-card.small1{ animation-delay: .10s; }
 .fixed-card.small2{ animation-delay: .25s; }
-.fixed-card.big{    animation-delay: .05s; }
-.fixed-card.wide1{  animation-delay: .18s; }
-.fixed-card.wide2{  animation-delay: .32s; }
+.fixed-card.big{ animation-delay: .05s; }
+.fixed-card.wide1{ animation-delay: .18s; }
+.fixed-card.wide2{ animation-delay: .32s; }
 
 @keyframes cardFloat{
   0%,100%{ transform: translateY(0) scale(1); }
-  50%{    transform: translateY(-3px) scale(1.01); }
+  50%{ transform: translateY(-3px) scale(1.01); }
 }
 
-/* احترام إعدادات تقليل الحركة في الجهاز */
+/* ===== Responsive ===== */
+@media (max-width: 900px){
+  .welcome-grid{
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .welcome-card.small-left,
+  .welcome-card.hero-right,
+  .welcome-card.bottom-left,
+  .welcome-card.bottom-middle,
+  .welcome-card.bottom-right{
+    grid-column: span 1;
+    min-height: 180px;
+  }
+}
+
+@media (max-width:420px){
+  .hero-title{ font-size: 40px; }
+  .items-grid{ grid-template-columns: 1fr; }
+  .fixed-grid{ grid-template-columns: 1fr 1fr 1fr; }
+
+  .welcome-screen{
+    padding: 14px 10px 20px;
+  }
+
+  .welcome-title{
+    font-size: 36px;
+    letter-spacing: .12em;
+  }
+
+  .welcome-subtitle{
+    font-size: 18px;
+  }
+
+  .welcome-grid{
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .welcome-card.small-left,
+  .welcome-card.hero-right,
+  .welcome-card.bottom-left,
+  .welcome-card.bottom-middle,
+  .welcome-card.bottom-right{
+    grid-column: span 1;
+    min-height: 120px;
+    border-radius: 20px;
+  }
+
+  .welcome-signin-btn{
+    min-height: 62px;
+    font-size: 18px;
+    border-radius: 22px;
+  }
+
+  .welcome-copy p{
+    font-size: 16px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce){
   .fixed-gallery,
   .fixed-card{
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
+  }
+
+  .welcome-signin-btn{
+    transition: none !important;
   }
 }
