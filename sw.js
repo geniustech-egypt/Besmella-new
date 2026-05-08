@@ -1,4 +1,4 @@
-const CACHE_NAME = "besmella-v4";
+const CACHE_NAME = "besmella-v5";
 const ASSETS = [
   "./",
   "./index.html",
