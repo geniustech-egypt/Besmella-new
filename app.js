@@ -38,6 +38,52 @@ window.db = db;
 window.auth = auth;
 
 /* ======================
+   شاشة البداية
+====================== */
+const APP_ENTERED_STORAGE_KEY = "besmella_app_entered_once";
+
+function hasEnteredAppBefore() {
+  return localStorage.getItem(APP_ENTERED_STORAGE_KEY) === "1";
+}
+
+function markAppAsEntered() {
+  localStorage.setItem(APP_ENTERED_STORAGE_KEY, "1");
+}
+
+function showWelcomeScreen() {
+  const welcomeScreen = document.getElementById("welcomeScreen");
+  const appShell = document.getElementById("appShell");
+
+  document.body.classList.add("welcome-mode");
+  if (welcomeScreen) welcomeScreen.classList.add("is-visible");
+  if (appShell) appShell.classList.add("is-hidden");
+}
+
+function showAppShell() {
+  const welcomeScreen = document.getElementById("welcomeScreen");
+  const appShell = document.getElementById("appShell");
+
+  document.body.classList.remove("welcome-mode");
+  if (welcomeScreen) welcomeScreen.classList.remove("is-visible");
+  if (appShell) appShell.classList.remove("is-hidden");
+}
+
+function initWelcomeScreen() {
+  const enterBtn = document.getElementById("enterAppBtn");
+
+  if (hasEnteredAppBefore()) {
+    showAppShell();
+  } else {
+    showWelcomeScreen();
+  }
+
+  enterBtn?.addEventListener("click", () => {
+    markAppAsEntered();
+    showAppShell();
+  });
+}
+
+/* ======================
    بريد الأدمن
 ====================== */
 const ADMIN_EMAIL = "hussein-admin@g.tech.com";
@@ -49,7 +95,6 @@ const WHATSAPP_NUMBER_STORAGE_KEY = "besmella_restaurant_whatsapp_number";
 
 function normalizeWhatsAppNumber(raw) {
   const v = String(raw || "").trim().replace(/[^\d]/g, "");
-  // بسيط: رقم دولي بدون +
   return v;
 }
 
@@ -71,7 +116,7 @@ function formatNumber(num) {
 
 function getEgyptDateString() {
   const now = new Date();
-  const egyptOffset = 2 * 60; // UTC+2
+  const egyptOffset = 2 * 60;
   const egyptTime = new Date(now.getTime() + (egyptOffset - now.getTimezoneOffset()) * 60000);
   return egyptTime.toISOString().split("T")[0];
 }
@@ -119,7 +164,6 @@ async function loadCategories() {
       });
     });
 
-    // لو DB فاضية: seed بالأقسام الافتراضية (بدون all)
     if (fromDb.length === 0) {
       const seed = categories
         .filter(c => c.id !== "all")
@@ -141,7 +185,6 @@ async function loadCategories() {
 }
 
 function refreshAdminCategoryDropdowns() {
-  // dropdown إضافة صنف
   const addSel = document.getElementById("modalItemCategory");
   if (addSel) {
     addSel.innerHTML = categories
@@ -150,7 +193,6 @@ function refreshAdminCategoryDropdowns() {
       .join("");
   }
 
-  // dropdown تعديل صنف (Single edit modal)
   const editSel = document.getElementById("singleEditCategory");
   if (editSel) {
     const current = editSel.value;
@@ -160,7 +202,6 @@ function refreshAdminCategoryDropdowns() {
       .join("");
   }
 
-  // فلتر إدارة الأصناف
   const manageSel = document.getElementById("adminItemCategoryFilter");
   if (manageSel) {
     manageSel.innerHTML = categories.map(c => `<option value="${c.id}">${c.label}</option>`).join("");
@@ -425,14 +466,14 @@ async function loadUserOrderFromDB() {
 }
 
 /* ======================
-   إلغاء فكرة الأرشفة/الحذف التلقائي (لا نفعل شيء)
+   إلغاء فكرة الأرشفة/الحذف التلقائي
 ====================== */
 async function autoArchiveOldOrders() {
   // intentionally disabled
 }
 
 /* ======================
-   تحميل الأصناف
+   تحميل الأصن��ف
 ====================== */
 async function loadItems() {
   try {
@@ -747,7 +788,7 @@ async function saveOrderToFirestore(showAlertAfter = false) {
 }
 
 /* ======================
-   عرض الطلبات + زر واتساب للطلب المجمع + Excel + الطلبات الفردية
+   عرض الطلبات + زر واتساب + Excel + الطلبات الفردية
 ====================== */
 async function displayOrders() {
   const ordersTableBody = document.getElementById("ordersTableBody");
@@ -900,14 +941,7 @@ async function getTodaysAggregatedOrdersData() {
   };
 }
 
-/* ======================
-   WhatsApp message (UPDATED)
-   المطلوب: اسم الصنف + الكمية فقط (بشكل منسق) بدون أي بيانات أخرى
-====================== */
 function buildWhatsAppAggregatedMessage(data) {
-  // مثال الناتج:
-  // • فول: 12
-  // • بطاطس: 5
   const lines = [];
 
   itemsList.forEach(item => {
@@ -917,9 +951,7 @@ function buildWhatsAppAggregatedMessage(data) {
     }
   });
 
-  // لو مفيش أصناف
   if (lines.length === 0) return "لا توجد أصناف اليوم.";
-
   return lines.join("\n");
 }
 
@@ -1811,14 +1843,14 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-
 /* ======================
    بدء التشغيل
 ====================== */
 window.addEventListener("load", async () => {
+  initWelcomeScreen();
   renderCategoryChips();
 
-  await autoArchiveOldOrders(); // معطلة (لا أرشفة ولا حذف)
+  await autoArchiveOldOrders();
   await loadCategories();
   await loadItems();
   await loadUserOrderFromDB();
