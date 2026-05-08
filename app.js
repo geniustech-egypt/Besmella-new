@@ -83,6 +83,10 @@ function getEgyptDateString() {
   return egyptTime.toISOString().split("T")[0];
 }
 
+function getTodaySummaryDocId() {
+  return getEgyptDateString();
+}
+
 function getCurrentDateTimeText() {
   const now = new Date();
   return new Intl.DateTimeFormat("ar-EG", {
@@ -110,8 +114,14 @@ function getShortDateTimeText(iso) {
 ====================== */
 async function ensureAnonymousAuth() {
   if (auth.currentUser) return auth.currentUser;
-  const cred = await signInAnonymously(auth);
-  return cred.user;
+
+  try {
+    const cred = await signInAnonymously(auth);
+    return cred.user;
+  } catch (error) {
+    console.error("Anonymous auth failed:", error);
+    throw error;
+  }
 }
 
 function getCurrentUid() {
@@ -652,7 +662,19 @@ async function saveOrderToFirestore(showAlertAfter = false) {
     return false;
   }
 
-  const user = await ensureAnonymousAuth();
+  let user;
+  try {
+    user = await ensureAnonymousAuth();
+  } catch (e) {
+    alert("فشل تسجيل الدخول المؤقت للمستخدم. تأكد من تفعيل Anonymous Authentication في Firebase.");
+    return false;
+  }
+
+  if (!user?.uid) {
+    alert("تعذر الحصول على هوية المستخدم المؤقتة.");
+    return false;
+  }
+
   const name = getSavedUserName().trim();
   const orderObj = {
     name,
@@ -727,13 +749,13 @@ function distributeDeliveryWithoutFractions(users, totalDelivery) {
   });
 }
 
-async function getAggregatedInvoiceData(deliveryCost = 0) {
+async function buildTodaySummaryFromOrders(deliveryCost = 0) {
   const querySnapshot = await getDocs(collection(db, "orders"));
   const today = getEgyptDateString();
 
-  const todaysOrders = [];
   const totalQuantities = {};
   const totalValues = {};
+  const usersDetailed = [];
   let itemsGrandTotal = 0;
   let usersCount = 0;
   let totalUnits = 0;
@@ -781,7 +803,7 @@ async function getAggregatedInvoiceData(deliveryCost = 0) {
 
     if (userItems.length > 0) {
       usersCount++;
-      todaysOrders.push({
+      usersDetailed.push({
         id: docSnap.id,
         name: order.name || "بدون اسم",
         createdAt: order.createdAt,
@@ -799,49 +821,81 @@ async function getAggregatedInvoiceData(deliveryCost = 0) {
   });
 
   const normalizedDeliveryCost = toInt(deliveryCost);
-  const usersDetailed = distributeDeliveryWithoutFractions(todaysOrders, normalizedDeliveryCost);
-  const distributedDeliveryTotal = usersDetailed.reduce((acc, user) => acc + toInt(user.deliveryShare), 0);
+  const usersWithDelivery = distributeDeliveryWithoutFractions(usersDetailed, normalizedDeliveryCost);
+  const distributedDeliveryTotal = usersWithDelivery.reduce((acc, user) => acc + toInt(user.deliveryShare), 0);
   const grandTotal = toInt(itemsGrandTotal + distributedDeliveryTotal);
 
+  const summaryItems = itemsList
+    .map(item => ({
+      id: item.id,
+      name: item.name,
+      price: toInt(item.price || 0),
+      quantity: toInt(totalQuantities[item.id] || 0),
+      total: toInt(totalValues[item.id] || 0)
+    }))
+    .filter(item => item.quantity > 0);
+
+  const whatsAppText = [
+    "ملخص الفاتورة المجمعة:",
+    "",
+    ...summaryItems.map(item => `• ${item.name}: ${item.quantity}`),
+    "",
+    `تكلفة التوصيل: ${normalizedDeliveryCost} ج`,
+    `الإجمالي شامل التوصيل: ${grandTotal} ج`
+  ].join("\n");
+
   return {
+    date: today,
     dateTimeText: getCurrentDateTimeText(),
     usersCount,
     totalUnits: toInt(totalUnits),
-    totalDifferentItems: Object.values(totalQuantities).filter(v => toInt(v) > 0).length,
+    totalDifferentItems: summaryItems.length,
     itemsGrandTotal: toInt(itemsGrandTotal),
     deliveryCost: normalizedDeliveryCost,
     distributedDeliveryTotal: toInt(distributedDeliveryTotal),
     grandTotal: toInt(grandTotal),
-    totalQuantities,
-    totalValues,
-    usersDetailed
+    summaryItems,
+    usersDetailed: usersWithDelivery,
+    whatsAppText,
+    updatedAt: new Date().toISOString()
   };
 }
 
-function buildAggregatedWhatsAppMessageFromInvoiceData(data) {
-  const lines = [];
+async function refreshPublicSummary(deliveryCost = null, silent = false) {
+  try {
+    await ensureAnonymousAuth();
 
-  lines.push("ملخص الفاتورة المجمعة:");
-  lines.push("");
+    const ref = doc(db, "public_summaries", getTodaySummaryDocId());
+    const snap = await getDoc(ref);
 
-  itemsList.forEach(item => {
-    const q = toInt(data.totalQuantities[item.id] || 0);
-    if (q > 0) {
-      lines.push(`• ${item.name}: ${q}`);
+    let finalDeliveryCost = 0;
+    if (deliveryCost != null) {
+      finalDeliveryCost = toInt(deliveryCost);
+    } else if (snap.exists()) {
+      finalDeliveryCost = toInt(snap.data()?.deliveryCost || 0);
     }
-  });
 
-  lines.push("");
-  lines.push(`تكلفة التوصيل: ${toInt(data.deliveryCost)} ج`);
-  lines.push(`الإجمالي شامل التوصيل: ${toInt(data.grandTotal)} ج`);
+    const summary = await buildTodaySummaryFromOrders(finalDeliveryCost);
+    await setDoc(ref, summary, { merge: true });
 
-  return lines.join("\n");
+    if (!silent) alert("تم تحديث الفاتورة المجمعة بنجاح.");
+    return true;
+  } catch (e) {
+    console.error(e);
+    if (!silent) alert("فشل تحديث الفاتورة المجمعة.");
+    return false;
+  }
+}
+
+async function getPublicSummary() {
+  const ref = doc(db, "public_summaries", getTodaySummaryDocId());
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  return snap.data();
 }
 
 async function renderAggregatedInvoiceScreen() {
   const deliveryInput = document.getElementById("aggregatedDeliveryCostInput");
-  const deliveryCost = toInt(deliveryInput?.value || 0);
-  if (deliveryInput) deliveryInput.value = String(deliveryCost);
 
   const usersCountEl = document.getElementById("aggregatedUsersCount");
   const unitsCountEl = document.getElementById("aggregatedUnitsCount");
@@ -854,61 +908,74 @@ async function renderAggregatedInvoiceScreen() {
   const grandItemsCountEl = document.getElementById("aggregatedGrandItemsCount");
   const grandDeliveryEl = document.getElementById("aggregatedGrandDeliveryValue");
 
-  const data = await getAggregatedInvoiceData(deliveryCost);
+  const data = await getPublicSummary();
 
-  if (usersCountEl) usersCountEl.textContent = String(data.usersCount);
-  if (unitsCountEl) unitsCountEl.textContent = String(data.totalUnits);
-  if (dateTextEl) dateTextEl.textContent = data.dateTimeText;
+  if (!data) {
+    if (deliveryInput) {
+      deliveryInput.value = "0";
+      deliveryInput.disabled = false;
+    }
+
+    if (usersCountEl) usersCountEl.textContent = "0";
+    if (unitsCountEl) unitsCountEl.textContent = "0";
+    if (dateTextEl) dateTextEl.textContent = "لم يتم تحديث الفاتورة المجمعة بعد";
+    if (summaryBody) summaryBody.innerHTML = `<tr><td colspan="4" style="text-align:center;font-weight:900;color:#777;">لم يتم إنشاء الفاتورة المجمعة بعد. اضغط تحديث الفاتورة المجمعة.</td></tr>`;
+    if (summaryFoot) summaryFoot.innerHTML = "";
+    if (usersList) usersList.innerHTML = `<div class="user-order-detail-card" style="padding:16px;text-align:center;font-weight:1000;color:#777;">لا توجد بيانات متاحة بعد.</div>`;
+    if (grandTotalEl) grandTotalEl.textContent = "0";
+    if (grandUsersCountEl) grandUsersCountEl.textContent = "0";
+    if (grandItemsCountEl) grandItemsCountEl.textContent = "0";
+    if (grandDeliveryEl) grandDeliveryEl.textContent = "0";
+    return;
+  }
+
+  if (deliveryInput) {
+    deliveryInput.value = String(toInt(data.deliveryCost || 0));
+    deliveryInput.disabled = false;
+  }
+
+  if (usersCountEl) usersCountEl.textContent = String(toInt(data.usersCount || 0));
+  if (unitsCountEl) unitsCountEl.textContent = String(toInt(data.totalUnits || 0));
+  if (dateTextEl) dateTextEl.textContent = data.dateTimeText || "--";
 
   if (summaryBody) {
-    const rows = [];
+    const rows = (data.summaryItems || []).map(item => `
+      <tr>
+        <td>${item.name}</td>
+        <td>${toInt(item.price)} ج</td>
+        <td class="aggregated-highlight">${toInt(item.quantity)}</td>
+        <td>${toInt(item.total)} ج</td>
+      </tr>
+    `);
 
-    itemsList.forEach(item => {
-      const quantity = toInt(data.totalQuantities[item.id] || 0);
-      if (quantity > 0) {
-        const price = toInt(item.price || 0);
-        const total = toInt(data.totalValues[item.id] || 0);
-
-        rows.push(`
-          <tr>
-            <td>${item.name}</td>
-            <td>${price} ج</td>
-            <td class="aggregated-highlight">${quantity}</td>
-            <td>${total} ج</td>
-          </tr>
-        `);
-      }
-    });
-
-    if (rows.length === 0) {
-      summaryBody.innerHTML = `<tr><td colspan="4" style="text-align:center;font-weight:900;color:#777;">لا توجد طلبات اليوم.</td></tr>`;
-    } else {
-      summaryBody.innerHTML = rows.join("");
-    }
+    summaryBody.innerHTML = rows.length
+      ? rows.join("")
+      : `<tr><td colspan="4" style="text-align:center;font-weight:900;color:#777;">لا توجد طلبات اليوم.</td></tr>`;
   }
 
   if (summaryFoot) {
     summaryFoot.innerHTML = `
       <tr>
         <td colspan="3" style="font-weight:1000;">الإجمالي الكلي</td>
-        <td class="aggregated-highlight">${data.itemsGrandTotal} ج</td>
+        <td class="aggregated-highlight">${toInt(data.itemsGrandTotal || 0)} ج</td>
       </tr>
       <tr>
         <td colspan="3" style="font-weight:1000;">تكلفة التوصيل</td>
-        <td class="aggregated-highlight">${data.distributedDeliveryTotal} ج</td>
+        <td class="aggregated-highlight">${toInt(data.distributedDeliveryTotal || 0)} ج</td>
       </tr>
       <tr>
         <td colspan="3" style="font-weight:1000;">الإجمالي شامل التوصيل</td>
-        <td class="aggregated-highlight">${data.grandTotal} ج</td>
+        <td class="aggregated-highlight">${toInt(data.grandTotal || 0)} ج</td>
       </tr>
     `;
   }
 
   if (usersList) {
-    if (!data.usersDetailed.length) {
+    const users = data.usersDetailed || [];
+    if (!users.length) {
       usersList.innerHTML = `<div class="user-order-detail-card" style="padding:16px;text-align:center;font-weight:1000;color:#777;">لا توجد طلبات اليوم.</div>`;
     } else {
-      usersList.innerHTML = data.usersDetailed.map(user => {
+      usersList.innerHTML = users.map(user => {
         const firstLetter = String(user.name || "م").trim().charAt(0) || "م";
         const createdAtText = getShortDateTimeText(user.createdAt);
 
@@ -916,14 +983,14 @@ async function renderAggregatedInvoiceScreen() {
           <div class="user-order-detail-card">
             <div class="user-order-header">
               <div>
-                <div class="user-order-total">${user.finalTotal} ج
+                <div class="user-order-total">${toInt(user.finalTotal)} ج
                   <small>شامل التوصيل</small>
                 </div>
               </div>
 
               <div class="user-order-name-wrap">
                 <div class="user-order-name">${user.name}</div>
-                <div class="user-order-meta">${user.units} وحدة • ${createdAtText}</div>
+                <div class="user-order-meta">${toInt(user.units)} وحدة • ${createdAtText}</div>
               </div>
 
               <div class="user-order-avatar">${firstLetter}</div>
@@ -931,23 +998,23 @@ async function renderAggregatedInvoiceScreen() {
 
             <table class="user-order-table">
               <tbody>
-                ${user.items.map(item => `
+                ${(user.items || []).map(item => `
                   <tr>
                     <td>${item.name}</td>
-                    <td>${item.price} ج</td>
-                    <td class="aggregated-highlight">${item.quantity} ×</td>
-                    <td>${item.total} ج</td>
+                    <td>${toInt(item.price)} ج</td>
+                    <td class="aggregated-highlight">${toInt(item.quantity)} ×</td>
+                    <td>${toInt(item.total)} ج</td>
                   </tr>
                 `).join("")}
 
                 <tr class="user-order-footer-row">
                   <td colspan="3">نصيب التوصيل</td>
-                  <td>${user.deliveryShare} ج</td>
+                  <td>${toInt(user.deliveryShare)} ج</td>
                 </tr>
 
                 <tr class="user-order-final-row">
                   <td colspan="3">الإجمالي النهائي</td>
-                  <td>${user.finalTotal} ج</td>
+                  <td>${toInt(user.finalTotal)} ج</td>
                 </tr>
               </tbody>
             </table>
@@ -957,10 +1024,10 @@ async function renderAggregatedInvoiceScreen() {
     }
   }
 
-  if (grandTotalEl) grandTotalEl.textContent = String(data.grandTotal);
-  if (grandUsersCountEl) grandUsersCountEl.textContent = String(data.usersCount);
-  if (grandItemsCountEl) grandItemsCountEl.textContent = String(data.totalDifferentItems);
-  if (grandDeliveryEl) grandDeliveryEl.textContent = String(data.distributedDeliveryTotal);
+  if (grandTotalEl) grandTotalEl.textContent = String(toInt(data.grandTotal || 0));
+  if (grandUsersCountEl) grandUsersCountEl.textContent = String(toInt(data.usersCount || 0));
+  if (grandItemsCountEl) grandItemsCountEl.textContent = String(toInt(data.totalDifferentItems || 0));
+  if (grandDeliveryEl) grandDeliveryEl.textContent = String(toInt(data.distributedDeliveryTotal || 0));
 }
 
 async function openAggregatedInvoiceScreen() {
@@ -2038,6 +2105,27 @@ async function deleteCategory(catId) {
 }
 
 /* ======================
+   WhatsApp Modal
+====================== */
+function openWhatsAppModal(fromSend = false) {
+  const modal = document.getElementById("whatsAppModal");
+  const input = document.getElementById("whatsAppNumberInput");
+  const msg = document.getElementById("whatsAppMsg");
+
+  if (!modal || !input || !msg) return;
+
+  msg.style.color = "";
+  msg.textContent = fromSend ? "اكتب رقم واتساب المطعم ثم اضغط إرسال." : "";
+  input.value = getRestaurantWhatsAppNumber() || "";
+  modal.style.display = "flex";
+}
+
+function closeWhatsAppModal() {
+  const modal = document.getElementById("whatsAppModal");
+  if (modal) modal.style.display = "none";
+}
+
+/* ======================
    Screen Events
 ====================== */
 document.getElementById("enterAppBtn")?.addEventListener("click", async () => {
@@ -2097,6 +2185,8 @@ document.getElementById("confirmOrderButton")?.addEventListener("click", async (
   const ok = await saveOrderToFirestore(false);
   if (!ok) return;
 
+  await refreshPublicSummary(null, true);
+
   renderSuccessScreen();
   currentOrder = [];
   renderItemsGrid();
@@ -2119,8 +2209,19 @@ document.getElementById("aggregatedAddNewOrderBtn")?.addEventListener("click", (
   showScreen("menuScreen");
 });
 
-document.getElementById("aggregatedDeliveryCostInput")?.addEventListener("input", () => {
-  renderAggregatedInvoiceScreen();
+document.getElementById("aggregatedDeliveryCostInput")?.addEventListener("input", async (e) => {
+  const deliveryCost = toInt(e.target.value || 0);
+  const ok = await refreshPublicSummary(deliveryCost, true);
+  if (ok) {
+    await renderAggregatedInvoiceScreen();
+  }
+});
+
+document.getElementById("aggregatedRefreshBtn")?.addEventListener("click", async () => {
+  const ok = await refreshPublicSummary();
+  if (ok) {
+    await renderAggregatedInvoiceScreen();
+  }
 });
 
 document.getElementById("aggregatedWhatsAppBtn")?.addEventListener("click", async () => {
@@ -2131,15 +2232,19 @@ document.getElementById("aggregatedWhatsAppBtn")?.addEventListener("click", asyn
   }
 
   try {
-    const deliveryCost = toInt(document.getElementById("aggregatedDeliveryCostInput")?.value || 0);
-    const data = await getAggregatedInvoiceData(deliveryCost);
+    const data = await getPublicSummary();
 
-    if (!data.usersCount) {
-      alert("لا توجد طلبات اليوم لإرسالها.");
+    if (!data) {
+      alert("لم يتم تحديث الفاتورة المجمعة بعد.");
       return;
     }
 
-    const msg = buildAggregatedWhatsAppMessageFromInvoiceData(data);
+    const msg = data.whatsAppText || "";
+    if (!msg) {
+      alert("لا توجد رسالة جاهزة للإرسال.");
+      return;
+    }
+
     const url = `https://wa.me/${number}?text=${encodeURIComponent(msg)}`;
     window.open(url, "_blank");
   } catch (e) {
@@ -2192,6 +2297,10 @@ document.getElementById("adminDashManageOrdersBtn")?.addEventListener("click", a
   showScreen("adminOrdersScreen");
 });
 
+document.getElementById("adminDashRefreshSummaryBtn")?.addEventListener("click", async () => {
+  await refreshPublicSummary();
+});
+
 document.getElementById("adminDashDeleteAllOrdersBtn")?.addEventListener("click", async () => {
   if (!requireAdminOrAlert()) return;
   await deleteAllOrdersForever();
@@ -2210,23 +2319,6 @@ document.getElementById("backFromAdminOrdersBtn")?.addEventListener("click", () 
 document.getElementById("refreshAdminOrdersBtn")?.addEventListener("click", async () => {
   await renderAdminOrdersScreen();
 });
-function openWhatsAppModal(fromSend = false) {
-  const modal = document.getElementById("whatsAppModal");
-  const input = document.getElementById("whatsAppNumberInput");
-  const msg = document.getElementById("whatsAppMsg");
-
-  if (!modal || !input || !msg) return;
-
-  msg.style.color = "";
-  msg.textContent = fromSend ? "اكتب رقم واتساب المطعم ثم اضغط إرسال." : "";
-  input.value = getRestaurantWhatsAppNumber() || "";
-  modal.style.display = "flex";
-}
-
-function closeWhatsAppModal() {
-  const modal = document.getElementById("whatsAppModal");
-  if (modal) modal.style.display = "none";
-}
 
 document.getElementById("openWhatsAppModalBtn")?.addEventListener("click", () => openWhatsAppModal(false));
 document.getElementById("closeWhatsAppModalBtn")?.addEventListener("click", closeWhatsAppModal);
