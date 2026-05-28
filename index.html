@@ -423,19 +423,49 @@
       </div>
     </div>
 
+    <!-- ========== WhatsApp Modal (محسّن بالكامل) ========== -->
     <div id="whatsAppModal" class="modal">
       <div class="modal-card">
-        <h3 class="modal-title">إرسال الطلب المجمع عبر واتساب</h3>
+        <!-- العنوان ديناميكي حسب الوضع (إرسال / حفظ رقم) -->
+        <h3 class="modal-title" id="whatsAppModalTitle">إرسال الطلب المجمع عبر واتساب</h3>
+
         <label style="display:block;font-weight:900;margin-bottom:6px;">رقم واتساب المطعم</label>
         <input id="whatsAppNumberInput" class="modal-input" placeholder="مثال: 2010xxxxxxxxx" inputmode="numeric" />
+
+        <!-- زر جهات الاتصال — مخفي افتراضياً، يظهر فقط على Chrome Android -->
+        <button id="pickContactBtn" class="btn btn-soft" style="width:100%;margin-bottom:8px;display:none;">
+          <i class="fa-solid fa-address-book"></i> اختر من جهات الاتصال
+        </button>
+
+        <!-- معاينة الرسالة — تظهر فقط لما يكون في رسالة جاهزة -->
+        <div id="whatsAppPreview" style="
+          display:none;
+          background:#f0fdf4;
+          border:1px solid #bbf7d0;
+          border-radius:12px;
+          padding:12px;
+          margin-bottom:8px;
+          font-size:13px;
+          font-weight:800;
+          color:#166534;
+          white-space:pre-wrap;
+          max-height:150px;
+          overflow-y:auto;
+          direction:rtl;
+          text-align:right;
+        "></div>
+
         <div id="whatsAppMsg" class="modal-msg"></div>
+
+        <!-- زر الإرسال — نصه يتغير ديناميكياً -->
         <button id="sendWhatsAppBtn" class="btn btn-primary" style="width:100%;">
           <i class="fa-brands fa-whatsapp"></i> إرسال
         </button>
         <button id="closeWhatsAppModalBtn" class="btn btn-soft" style="width:100%;">إغلاق</button>
       </div>
     </div>
-  </div>
+
+  </div><!-- end appShell -->
 
   <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
   <script type="module" src="app.js"></script>
