@@ -669,10 +669,11 @@ async function buildTodaySummaryFromOrders(deliveryCost = 0) {
     }))
     .filter(item => item.quantity > 0);
 
+  // المطلوب: الرسالة تحتوي على الأصناف والكميات فقط
   const whatsAppText = [
-  "ملخص الفاتورة المجمعة:", "",
-  ...summaryItems.map(item => `• ${item.name}: ${item.quantity}`)
-].join("\n");
+    "الطلب:",
+    ...summaryItems.map(item => `${item.name}: ${item.quantity}`)
+  ].join("\n");
 
   return {
     date: today, dateTimeText: getCurrentDateTimeText(), usersCount,
@@ -1588,8 +1589,6 @@ document.getElementById("manageCategoriesBtn")?.addEventListener("click", openCa
 
 /* ======================
    WhatsApp Modal
-   — يدعم الكتابة اليدوية للرقم
-   — يدعم Contact Picker API على Android Chrome
 ====================== */
 function openWhatsAppModal(msgText = "") {
   pendingWhatsAppText = msgText;
@@ -1604,20 +1603,15 @@ function openWhatsAppModal(msgText = "") {
 
   if (!modal) return;
 
-  // عنوان ديناميكي
   if (titleEl) {
     titleEl.textContent = msgText
-      ? "إرسال الفاتورة المجمعة عبر واتساب"
+      ? "إرسال الطلب عبر واتساب"
       : "إعداد رقم واتساب المطعم";
   }
 
-  // ✅ تعديل: لا نملأ آخر رقم محفوظ تلقائيًا — المستخدم يختار الرقم كل مرة
-  if (numInput) {
-    numInput.value = "";
-    numInput.focus();
-  }
+  // المطلوب: كل مرة ضغط واتساب لازم إدخال رقم جديد
+  if (numInput) numInput.value = "";
 
-  // معاينة الرسالة
   if (previewEl) {
     if (msgText) {
       previewEl.textContent = msgText;
@@ -1629,14 +1623,12 @@ function openWhatsAppModal(msgText = "") {
 
   if (msgEl) msgEl.textContent = "";
 
-  // نص زر الإرسال
   if (sendBtn) {
     sendBtn.innerHTML = msgText
       ? `<i class="fa-brands fa-whatsapp"></i> إرسال عبر واتساب`
       : `<i class="fa-solid fa-floppy-disk"></i> حفظ الرقم`;
   }
 
-  // إظهار زر جهات الاتصال فقط على Chrome Android الذي يدعم Contact Picker
   if (contactBtn) {
     const supported = "contacts" in navigator && "ContactsManager" in window;
     contactBtn.style.display = supported ? "block" : "none";
@@ -1649,9 +1641,13 @@ function closeWhatsAppModal() {
   const modal = document.getElementById("whatsAppModal");
   if (modal) modal.style.display = "none";
   pendingWhatsAppText = "";
+
+  const numInput = document.getElementById("whatsAppNumberInput");
+  const msgEl    = document.getElementById("whatsAppMsg");
+  if (numInput) numInput.value = "";
+  if (msgEl) msgEl.textContent = "";
 }
 
-// زر اختيار من جهات الاتصال (Contact Picker API)
 document.getElementById("pickContactBtn")?.addEventListener("click", async () => {
   try {
     const contacts = await navigator.contacts.select(["tel"], { multiple: false });
@@ -1667,7 +1663,6 @@ document.getElementById("pickContactBtn")?.addEventListener("click", async () =>
   }
 });
 
-// زر الإرسال / الحفظ
 document.getElementById("sendWhatsAppBtn")?.addEventListener("click", () => {
   const numInput = document.getElementById("whatsAppNumberInput");
   const msgEl    = document.getElementById("whatsAppMsg");
@@ -1681,16 +1676,12 @@ document.getElementById("sendWhatsAppBtn")?.addEventListener("click", () => {
     return;
   }
 
-  // حفظ الرقم كآخر رقم مُستخدم (للاحتفاظ فقط)، لكن لن يتم تعبئته تلقائيًا لاحقًا
-  setRestaurantWhatsAppNumber(num);
-
   if (pendingWhatsAppText) {
-    // فتح واتساب مع الرسالة بعد اختيار المستخدم للرقم
     const encoded = encodeURIComponent(pendingWhatsAppText);
     window.open(`https://wa.me/${num}?text=${encoded}`, "_blank");
     closeWhatsAppModal();
   } else {
-    // وضع حفظ الرقم فقط
+    setRestaurantWhatsAppNumber(num);
     if (msgEl) { msgEl.style.color = "#166534"; msgEl.textContent = "تم حفظ الرقم بنجاح."; }
     setTimeout(closeWhatsAppModal, 600);
   }
@@ -1698,18 +1689,19 @@ document.getElementById("sendWhatsAppBtn")?.addEventListener("click", () => {
 
 document.getElementById("closeWhatsAppModalBtn")?.addEventListener("click", closeWhatsAppModal);
 
-// زر واتساب في شاشة الفاتورة المجمعة
+// مهم: نبني الرسالة مباشرة وقت الضغط (بدون الاعتماد على summary مخزّن قديم)
 document.getElementById("aggregatedWhatsAppBtn")?.addEventListener("click", async () => {
-  const data = await getPublicSummary();
-  const text = data?.whatsAppText || "";
-  openWhatsAppModal(text);
+  const deliveryInput = document.getElementById("aggregatedDeliveryCostInput");
+  const cost = toInt(deliveryInput?.value || 0);
+  const summary = await buildTodaySummaryFromOrders(cost);
+  openWhatsAppModal(summary.whatsAppText || "");
 });
 
-// زر واتساب القديم (legacy)
 document.getElementById("openWhatsAppModalBtn")?.addEventListener("click", async () => {
-  const data = await getPublicSummary();
-  const text = data?.whatsAppText || "";
-  openWhatsAppModal(text);
+  const deliveryInput = document.getElementById("aggregatedDeliveryCostInput");
+  const cost = toInt(deliveryInput?.value || 0);
+  const summary = await buildTodaySummaryFromOrders(cost);
+  openWhatsAppModal(summary.whatsAppText || "");
 });
 
 /* ======================
@@ -1767,14 +1759,11 @@ document.getElementById("exportExcelButton")?.addEventListener("click", async ()
 /* ======================
    Navigation Events
 ====================== */
-
-// Welcome screen
 document.getElementById("enterAppBtn")?.addEventListener("click", () => {
   markAppAsEntered();
   continueIntoAppFlow();
 });
 
-// Name setup
 document.getElementById("saveFirstUserNameBtn")?.addEventListener("click", () => {
   const input = document.getElementById("firstUserNameInput");
   const msg   = document.getElementById("firstUserNameMsg");
@@ -1792,7 +1781,6 @@ document.getElementById("firstUserNameInput")?.addEventListener("keydown", e => 
   if (e.key === "Enter") document.getElementById("saveFirstUserNameBtn")?.click();
 });
 
-// Home screen buttons
 document.getElementById("goToMenuBtn")?.addEventListener("click", () => {
   showScreen("menuScreen");
   renderItemsGrid();
@@ -1812,15 +1800,12 @@ document.getElementById("openAdminFromHomeBtn")?.addEventListener("click", () =>
   }
 });
 
-// Back buttons
 document.getElementById("backToHomeFromMenu")?.addEventListener("click", () => showScreen("homeScreen"));
 document.getElementById("backToMenuFromReview")?.addEventListener("click", () => showScreen("menuScreen"));
-
 document.getElementById("backFromAggregatedInvoiceBtn")?.addEventListener("click", () => showScreen("homeScreen"));
 document.getElementById("backFromAdminDashboardBtn")?.addEventListener("click", () => showScreen("homeScreen"));
 document.getElementById("backFromAdminOrdersBtn")?.addEventListener("click", () => showScreen("adminDashboardScreen"));
 
-// Review screen confirm
 document.getElementById("openReviewScreenBtn")?.addEventListener("click", () => {
   if (!isNameValid()) return;
   if (currentOrder.length === 0) { alert("لم تختر أي صنف بعد."); return; }
@@ -1841,11 +1826,9 @@ document.getElementById("confirmOrderButton")?.addEventListener("click", async (
   showScreen("successScreen");
 });
 
-// Success screen
 document.getElementById("successShowAggregatedBtn")?.addEventListener("click", openAggregatedInvoiceScreen);
 document.getElementById("successBackHomeBtn")?.addEventListener("click", () => showScreen("homeScreen"));
 
-// Aggregated Invoice screen
 document.getElementById("aggregatedRefreshBtn")?.addEventListener("click", async () => {
   const deliveryInput = document.getElementById("aggregatedDeliveryCostInput");
   const cost = toInt(deliveryInput?.value || 0);
@@ -1861,7 +1844,6 @@ document.getElementById("aggregatedAddNewOrderBtn")?.addEventListener("click", (
   renderStickyOrderSummary();
 });
 
-// Admin Dashboard buttons
 document.getElementById("adminDashAddItemBtn")?.addEventListener("click", openAddItemModal);
 document.getElementById("adminDashEditItemsBtn")?.addEventListener("click", openItemsManageModal);
 document.getElementById("adminDashEditCutoffBtn")?.addEventListener("click", openCutoffTimeModal);
@@ -1885,10 +1867,8 @@ document.getElementById("adminDashLogoutBtn")?.addEventListener("click", async (
   showScreen("homeScreen");
 });
 
-// Admin Orders screen refresh
 document.getElementById("refreshAdminOrdersBtn")?.addEventListener("click", renderAdminOrdersScreen);
 
-// Legacy buttons
 document.getElementById("viewOrdersButton")?.addEventListener("click", async () => {
   const sec = document.getElementById("ordersSection");
   if (sec) sec.style.display = "block";
