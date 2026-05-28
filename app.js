@@ -52,6 +52,12 @@ const WHATSAPP_NUMBER_STORAGE_KEY = "besmella_restaurant_whatsapp_number";
 const ADMIN_EMAIL = "hussein-admin@g.tech.com";
 
 /* ======================
+   WhatsApp State
+   نص الرسالة المعلق بين فتح المودال والإرسال
+====================== */
+let pendingWhatsAppText = "";
+
+/* ======================
    Helpers عامة
 ====================== */
 function toInt(value) {
@@ -2105,24 +2111,65 @@ async function deleteCategory(catId) {
 }
 
 /* ======================
-   WhatsApp Modal
+   WhatsApp Modal (محدّث بالكامل)
 ====================== */
-function openWhatsAppModal(fromSend = false) {
-  const modal = document.getElementById("whatsAppModal");
-  const input = document.getElementById("whatsAppNumberInput");
-  const msg = document.getElementById("whatsAppMsg");
 
-  if (!modal || !input || !msg) return;
+/**
+ * فتح مودال الواتساب
+ * @param {string} text - نص الرسالة الجاهزة للإرسال (اختياري)
+ */
+function openWhatsAppModal(text = "") {
+  const modal   = document.getElementById("whatsAppModal");
+  const input   = document.getElementById("whatsAppNumberInput");
+  const msgEl   = document.getElementById("whatsAppMsg");
+  const pickBtn = document.getElementById("pickContactBtn");
+  const preview = document.getElementById("whatsAppPreview");
+  const title   = document.getElementById("whatsAppModalTitle");
+  const sendBtn = document.getElementById("sendWhatsAppBtn");
 
-  msg.style.color = "";
-  msg.textContent = fromSend ? "اكتب رقم واتساب المطعم ثم اضغط إرسال." : "";
+  if (!modal || !input || !msgEl) return;
+
+  // حفظ نص الرسالة ليستخدمه زر الإرسال
+  pendingWhatsAppText = text;
+
+  // إعادة تعيين حالة المودال
+  msgEl.style.color = "";
+  msgEl.textContent = "";
   input.value = getRestaurantWhatsAppNumber() || "";
+
+  // تحديث العنوان ونص الزر حسب الوضع
+  if (text) {
+    if (title) title.textContent = "إرسال الطلب المجمع عبر واتساب";
+    if (sendBtn) sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> إرسال الآن`;
+  } else {
+    if (title) title.textContent = "حفظ رقم واتساب المطعم";
+    if (sendBtn) sendBtn.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> حفظ الرقم`;
+  }
+
+  // إظهار معاينة الرسالة فقط إذا كان في رسالة
+  if (preview) {
+    if (text) {
+      preview.textContent = text;
+      preview.style.display = "block";
+    } else {
+      preview.textContent = "";
+      preview.style.display = "none";
+    }
+  }
+
+  // إظهار زر جهات الاتصال فقط على المتصفحات الداعمة (Chrome Android)
+  if (pickBtn) {
+    const contactsSupported = ("contacts" in navigator && "ContactsManager" in window);
+    pickBtn.style.display = contactsSupported ? "block" : "none";
+  }
+
   modal.style.display = "flex";
 }
 
 function closeWhatsAppModal() {
   const modal = document.getElementById("whatsAppModal");
   if (modal) modal.style.display = "none";
+  pendingWhatsAppText = "";
 }
 
 /* ======================
@@ -2224,29 +2271,28 @@ document.getElementById("aggregatedRefreshBtn")?.addEventListener("click", async
   }
 });
 
+// =============================================
+// زر واتساب في الفاتورة المجمعة (محدّث بالكامل)
+// دايماً بيفتح المودال — المستخدم يختار/يغير الرقم
+// =============================================
 document.getElementById("aggregatedWhatsAppBtn")?.addEventListener("click", async () => {
-  const number = normalizeWhatsAppNumber(getRestaurantWhatsAppNumber());
-  if (!number) {
-    openWhatsAppModal(true);
-    return;
-  }
-
   try {
     const data = await getPublicSummary();
 
     if (!data) {
-      alert("لم يتم تحديث الفاتورة المجمعة بعد.");
+      alert("لم يتم تحديث الفاتورة المجمعة بعد. اضغط تحديث أولاً.");
       return;
     }
 
-    const msg = data.whatsAppText || "";
-    if (!msg) {
-      alert("لا توجد رسالة جاهزة للإرسال.");
+    const msgText = data.whatsAppText || "";
+    if (!msgText) {
+      alert("لا توجد رسالة جاهزة للإرسال. تأكد من وجود طلبات اليوم.");
       return;
     }
 
-    const url = `https://wa.me/${number}?text=${encodeURIComponent(msg)}`;
-    window.open(url, "_blank");
+    // دايماً افتح المودال مع الرسالة جاهزة
+    openWhatsAppModal(msgText);
+
   } catch (e) {
     console.error(e);
     alert("حدث خطأ أثناء تجهيز رسالة واتساب.");
@@ -2320,26 +2366,98 @@ document.getElementById("refreshAdminOrdersBtn")?.addEventListener("click", asyn
   await renderAdminOrdersScreen();
 });
 
-document.getElementById("openWhatsAppModalBtn")?.addEventListener("click", () => openWhatsAppModal(false));
+// زر واتساب في الـ legacy panel — يفتح المودال بدون رسالة (وضع حفظ الرقم فقط)
+document.getElementById("openWhatsAppModalBtn")?.addEventListener("click", () => openWhatsAppModal(""));
+
 document.getElementById("closeWhatsAppModalBtn")?.addEventListener("click", closeWhatsAppModal);
 
-document.getElementById("sendWhatsAppBtn")?.addEventListener("click", async () => {
-  const input = document.getElementById("whatsAppNumberInput");
-  const msg = document.getElementById("whatsAppMsg");
-  const number = normalizeWhatsAppNumber(input?.value || "");
+// =============================================
+// زر اختيار جهة الاتصال (Contacts API)
+// يعمل فقط على Chrome Android + HTTPS
+// =============================================
+document.getElementById("pickContactBtn")?.addEventListener("click", async () => {
+  try {
+    const contacts = await navigator.contacts.select(["tel"], { multiple: false });
 
-  msg.textContent = "";
-  msg.style.color = "";
+    // المستخدم ألغى الاختيار — لا نعمل شيء بصمت
+    if (!contacts || contacts.length === 0) return;
 
-  if (!number || number.length < 8) {
-    msg.textContent = "اكتب رقم صحيح بصيغة دولية بدون + (مثال: 2010xxxxxxx).";
+    const tels = contacts[0]?.tel || [];
+    if (tels.length === 0) {
+      const msgEl = document.getElementById("whatsAppMsg");
+      if (msgEl) {
+        msgEl.style.color = "#dc2626";
+        msgEl.textContent = "جهة الاتصال دي معندهاش رقم تليفون مسجل.";
+      }
+      return;
+    }
+
+    // نظّف الرقم وضعه في الـ input
+    const normalized = normalizeWhatsAppNumber(tels[0]);
+    const inputEl = document.getElementById("whatsAppNumberInput");
+    if (inputEl) inputEl.value = normalized;
+
+    const msgEl = document.getElementById("whatsAppMsg");
+    if (msgEl) {
+      msgEl.style.color = "#166534";
+      msgEl.textContent = `✓ تم اختيار الرقم: ${normalized}`;
+    }
+
+  } catch (e) {
+    // DOMException: AbortError = المستخدم ألغى بنفسه → تجاهل بصمت
+    if (e?.name === "AbortError") return;
+
+    console.error("Contacts API error:", e);
+    const msgEl = document.getElementById("whatsAppMsg");
+    if (msgEl) {
+      msgEl.style.color = "#dc2626";
+      msgEl.textContent = "تعذر فتح جهات الاتصال. تأكد أن المتصفح يدعم هذه الخاصية.";
+    }
+  }
+});
+
+// =============================================
+// زر الإرسال (محدّث بالكامل)
+// - لو في رسالة معلقة → بيبعت على واتساب مباشرة
+// - لو مفيش رسالة (legacy) → بيحفظ الرقم فقط
+// =============================================
+document.getElementById("sendWhatsAppBtn")?.addEventListener("click", () => {
+  const inputEl = document.getElementById("whatsAppNumberInput");
+  const msgEl   = document.getElementById("whatsAppMsg");
+  const number  = normalizeWhatsAppNumber(inputEl?.value || "");
+
+  msgEl.textContent = "";
+  msgEl.style.color = "";
+
+  // التحقق من الرقم — يجب أن يكون 10 أرقام على الأقل (صيغة دولية)
+  if (!number || number.length < 10) {
+    msgEl.style.color = "#dc2626";
+    msgEl.textContent = "اكتب رقم صحيح بصيغة دولية بدون + (مثال: 201012345678).";
     return;
   }
 
+  // احفظ الرقم دايماً للمرة الجاية
   setRestaurantWhatsAppNumber(number);
-  msg.style.color = "#166534";
-  msg.textContent = "تم حفظ الرقم.";
-  setTimeout(closeWhatsAppModal, 200);
+
+  if (pendingWhatsAppText) {
+    // ── وضع الإرسال: افتح واتساب مباشرة ──
+    const url = `https://wa.me/${number}?text=${encodeURIComponent(pendingWhatsAppText)}`;
+
+    // استخدم location.href كـ fallback لو window.open اتبلوك
+    const newWin = window.open(url, "_blank");
+    if (!newWin || newWin.closed || typeof newWin.closed === "undefined") {
+      // Popup blocker — افتح في نفس الـ tab كحل أخير
+      window.location.href = url;
+    }
+
+    closeWhatsAppModal();
+
+  } else {
+    // ── وضع حفظ الرقم فقط (legacy) ──
+    msgEl.style.color = "#166534";
+    msgEl.textContent = "✓ تم حفظ الرقم بنجاح.";
+    setTimeout(closeWhatsAppModal, 800);
+  }
 });
 
 document.getElementById("viewOrdersButton")?.addEventListener("click", displayOrders);
