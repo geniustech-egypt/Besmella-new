@@ -9,11 +9,11 @@ const CORE_ASSETS = [
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png",
-  "./breadfast 1.png",
-  "./breadfast 2.png",
-  "./breadfast 3.png",
-  "./fast 8.png",
-  "./fast 9.png"
+  "./breadfast 11.webp",
+  "./breadfast 12.webp",
+  "./breadfast 3.webp",
+  "./breadfast 13.webp",
+  "./breadfast 14.webp"
 ];
 
 self.addEventListener("install", (event) => {
