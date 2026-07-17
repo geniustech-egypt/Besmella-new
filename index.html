@@ -115,6 +115,16 @@
         <section class="filters-bar">
           <div class="chips chips-menu" id="categoryChips" role="group" aria-label="الأقسام"></div>
         </section>
+        <section class="menu-search-bar">
+          <div class="menu-search-box">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input id="menuSearchInput" type="text" placeholder="ابحث عن صنف..." autocomplete="off" />
+            <button id="clearMenuSearchBtn" type="button" class="menu-search-clear" style="display:none;">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          <div id="menuSearchSuggestions" class="menu-search-suggestions" style="display:none;"></div>
+        </section>
         <section class="menu-list-section">
           <div id="itemsGrid" class="menu-list"></div>
         </section>
