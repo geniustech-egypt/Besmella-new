@@ -1,4 +1,4 @@
-const CACHE_NAME = "besmella-v6";
+const CACHE_NAME = "besmella-v7";
 
 // خلي الأصول الأساسية ثابتة + الباقي Runtime cache
 const CORE_ASSETS = [
