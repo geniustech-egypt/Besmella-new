@@ -446,6 +446,103 @@ body.welcome-mode{
   padding:12px 0 152px;
 }
 
+.menu-search-bar{
+  position:relative;
+  margin-bottom:12px;
+}
+
+.menu-search-box{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  background:#fff;
+  border:1px solid rgba(0,0,0,.08);
+  border-radius:16px;
+  padding:12px 14px;
+  box-shadow:var(--shadow);
+}
+
+.menu-search-box i.fa-magnifying-glass{
+  color:#b34a00;
+  font-size:16px;
+}
+
+.menu-search-box input{
+  flex:1;
+  border:none;
+  outline:none;
+  background:transparent;
+  font-size:15px;
+  font-weight:800;
+  color:#111;
+}
+
+.menu-search-clear{
+  border:none;
+  background:transparent;
+  color:#999;
+  font-size:15px;
+  cursor:pointer;
+  width:26px;
+  height:26px;
+  border-radius:999px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.menu-search-clear:hover{
+  background:#f3f3f3;
+  color:#555;
+}
+
+.menu-search-suggestions{
+  position:absolute;
+  top:calc(100% + 6px);
+  right:0;
+  left:0;
+  background:#fff;
+  border:1px solid rgba(0,0,0,.08);
+  border-radius:16px;
+  box-shadow:0 14px 30px rgba(0,0,0,.14);
+  max-height:280px;
+  overflow-y:auto;
+  z-index:50;
+}
+
+.menu-search-suggestion-item{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:12px 14px;
+  cursor:pointer;
+  border-bottom:1px solid rgba(0,0,0,.06);
+}
+
+.menu-search-suggestion-item:last-child{
+  border-bottom:none;
+}
+
+.menu-search-suggestion-item:hover{
+  background:#fff7ef;
+}
+
+.menu-search-suggestion-item .suggestion-name{
+  font-weight:1000;
+  color:#111;
+}
+
+.menu-search-suggestion-item .suggestion-cat{
+  font-size:12px;
+  font-weight:800;
+  color:#b34a00;
+  background:#fff1e6;
+  padding:4px 10px;
+  border-radius:999px;
+  white-space:nowrap;
+}
+
 .filters-bar{
   margin-bottom:12px;
 }
@@ -491,6 +588,12 @@ body.welcome-mode{
   align-items:center;
   justify-content:space-between;
   gap:12px;
+  transition:background .3s ease, box-shadow .3s ease;
+}
+
+.menu-item-row.menu-item-highlight{
+  background:#fff3e8;
+  box-shadow:0 0 0 3px #d83000, var(--shadow);
 }
 
 .menu-item-info{
