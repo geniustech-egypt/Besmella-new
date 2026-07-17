@@ -91,6 +91,22 @@ function getShortDateTimeText(iso) {
 }
 
 /* ======================
+   Arabic Text Normalization (للبحث المتقدم)
+====================== */
+function normalizeArabicText(str) {
+  return String(str || "")
+    .replace(/[أإآٱا]/g, "ا")
+    .replace(/[ىی]/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/[ًٌٍَُِّْـ]/g, "") // إزالة التشكيل والتطويل
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/* ======================
    Auth Helpers
 ====================== */
 async function ensureAnonymousAuth() {
@@ -424,6 +440,7 @@ function renderItemsGrid() {
     const qty     = current ? current.quantity : 0;
     const row     = document.createElement("div");
     row.className = "menu-item-row";
+    row.dataset.itemId = item.id;
     row.innerHTML = `
       <div class="menu-item-info">
         <div class="menu-item-name">${item.name}</div>
@@ -512,6 +529,101 @@ function renderSuccessScreen() {
     lastSubmittedOrderSnapshot.reduce((acc, item) => acc + item.price * item.quantity, 0)
   );
 }
+
+/* ======================
+   Menu Search (البحث المتقدم عن الأصناف)
+====================== */
+function getMenuSearchMatches(term) {
+  const normTerm = normalizeArabicText(term);
+  if (!normTerm) return [];
+  return itemsList
+    .filter(item => normalizeArabicText(item.name).includes(normTerm))
+    .slice(0, 8);
+}
+
+function renderMenuSearchSuggestions(term) {
+  const box = document.getElementById("menuSearchSuggestions");
+  if (!box) return;
+  const matches = getMenuSearchMatches(term);
+  if (!String(term || "").trim() || matches.length === 0) {
+    box.style.display = "none";
+    box.innerHTML = "";
+    return;
+  }
+  box.innerHTML = matches.map(item => `
+    <div class="menu-search-suggestion-item" data-suggest-item="${item.id}">
+      <span class="suggestion-name">${item.name}</span>
+      <span class="suggestion-cat">${getCategoryLabelById(item.category || guessCategory(item))}</span>
+    </div>`).join("");
+  box.style.display = "block";
+  box.querySelectorAll("[data-suggest-item]").forEach(el => {
+    el.addEventListener("click", () => {
+      goToMenuItem(el.getAttribute("data-suggest-item"));
+    });
+  });
+}
+
+function closeMenuSearchSuggestions() {
+  const box = document.getElementById("menuSearchSuggestions");
+  if (box) { box.style.display = "none"; box.innerHTML = ""; }
+}
+
+function goToMenuItem(itemId) {
+  const item = itemsList.find(x => x.id === itemId);
+  if (!item) return;
+
+  activeCategory = item.category || guessCategory(item);
+  renderCategoryChips();
+  renderItemsGrid();
+
+  const searchInput = document.getElementById("menuSearchInput");
+  const clearBtn     = document.getElementById("clearMenuSearchBtn");
+  if (searchInput) searchInput.value = "";
+  if (clearBtn) clearBtn.style.display = "none";
+  closeMenuSearchSuggestions();
+
+  setTimeout(() => {
+    const grid = document.getElementById("itemsGrid");
+    if (!grid) return;
+    const row = grid.querySelector(`[data-item-id="${itemId}"]`);
+    if (row) {
+      row.scrollIntoView({ behavior: "smooth", block: "center" });
+      row.classList.add("menu-item-highlight");
+      setTimeout(() => row.classList.remove("menu-item-highlight"), 1600);
+    }
+  }, 60);
+}
+
+document.getElementById("menuSearchInput")?.addEventListener("input", (e) => {
+  const val      = e.target.value || "";
+  const clearBtn = document.getElementById("clearMenuSearchBtn");
+  if (clearBtn) clearBtn.style.display = val ? "flex" : "none";
+  renderMenuSearchSuggestions(val);
+});
+
+document.getElementById("menuSearchInput")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    const matches = getMenuSearchMatches(e.target.value || "");
+    if (matches.length > 0) goToMenuItem(matches[0].id);
+  }
+});
+
+document.getElementById("clearMenuSearchBtn")?.addEventListener("click", () => {
+  const input    = document.getElementById("menuSearchInput");
+  const clearBtn = document.getElementById("clearMenuSearchBtn");
+  if (input) input.value = "";
+  if (clearBtn) clearBtn.style.display = "none";
+  closeMenuSearchSuggestions();
+});
+
+document.addEventListener("click", (e) => {
+  const box   = document.getElementById("menuSearchSuggestions");
+  const input = document.getElementById("menuSearchInput");
+  if (!box || !input) return;
+  if (e.target !== input && !box.contains(e.target)) {
+    box.style.display = "none";
+  }
+});
 
 /* ======================
    User Order DB
@@ -731,7 +843,7 @@ async function renderAggregatedInvoiceScreen() {
     if (usersCountEl) usersCountEl.textContent = "0";
     if (unitsCountEl) unitsCountEl.textContent = "0";
     if (dateTextEl)   dateTextEl.textContent   = "لم يتم تحديث الفاتورة المجمعة بعد";
-    if (summaryBody)  summaryBody.innerHTML    = `<tr><td colspan="4" style="text-align:center;font-weight:900;color:#777;">لم يتم إنشاء الفاتورة المجمعة بعد. اضغط تحديث الفاتورة المجمعة.</td></tr>`;
+    if (summaryBody)  summaryBody.innerHTML    = `<tr><td colspan="4" style="text-align:center;font-weight:900;color:#777;">لم يتم إنشاء الفاتورة المجمعة بعد. اضغط تحديث.</td></tr>`;
     if (summaryFoot)  summaryFoot.innerHTML   = "";
     if (usersList)    usersList.innerHTML     = `<div class="user-order-detail-card" style="padding:16px;text-align:center;font-weight:1000;color:#777;">لا توجد بيانات متاحة بعد.</div>`;
     if (grandTotalEl)      grandTotalEl.textContent      = "0";
